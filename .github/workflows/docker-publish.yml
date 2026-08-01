@@ -29,10 +29,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract app version from pyproject.toml
+      - name: Extract app version from package.json
         id: version
         run: |
-          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          VERSION=$(node -p "require('./package.json').version")
           echo "app_version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Build

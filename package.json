@@ -1,6 +1,6 @@
 {
   "name": "jiffy-doc",
-  "version": "0.0.10",
+  "version": "0.0.0",
   "private": true,
   "scripts": {
     "build": "next build",

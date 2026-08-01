@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.github
+.husky
+.idea
+.source
+*.md
+.env*.local
