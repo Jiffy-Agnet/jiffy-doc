@@ -7,40 +7,54 @@
     "dev": "next dev",
     "start": "next start",
     "types:check": "next typegen && tsc --noEmit",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "pnpm lint"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.44",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
+    "ai": "^7.0.41",
+    "class-variance-authority": "^0.7.1",
     "cnfast": "^0.1.0",
+    "flexsearch": "^0.8.212",
     "fumadocs-core": "16.14.0",
     "fumadocs-mdx": "15.2.1",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.14.0",
+    "hast-util-to-jsx-runtime": "^2.3.6",
     "lucide-react": "^1.27.0",
     "next": "16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "flexsearch": "^0.8.212",
-    "@openrouter/ai-sdk-provider": "^3.0.0",
-    "ai": "^7.0.41",
-    "zod": "^4.4.3",
-    "@ai-sdk/react": "^4.0.44",
-    "class-variance-authority": "^0.7.1",
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1",
     "remark-rehype": "^11.1.2",
-    "hast-util-to-jsx-runtime": "^2.3.6",
-    "unist-util-visit": "^5.1.0"
+    "unist-util-visit": "^5.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^11.0.1",
+    "@semantic-release/github": "^12.0.9",
+    "@semantic-release/release-notes-generator": "^14.1.1",
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/hast": "^3.0.5",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "postcss": "^8.5.24",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.12",
-    "@types/hast": "^3.0.5"
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "postcss": "^8.5.24",
+    "semantic-release": "^25.0.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3"
   }
 }
