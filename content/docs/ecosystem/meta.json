@@ -1,0 +1,6 @@
+{
+  "root": true,
+  "title": "Ecosystem",
+  "icon": "Globe",
+  "pages": ["index", "installation", "deployment"]
+}
