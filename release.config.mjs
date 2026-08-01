@@ -1,8 +1,24 @@
 export default {
   branches: ['main'],
   plugins: [
-    '@semantic-release/commit-analyzer',
-    '@semantic-release/release-notes-generator',
+    [
+      '@semantic-release/commit-analyzer',
+      {
+        preset: 'conventionalcommits',
+        presetConfig: {
+          preMajor: true,
+        },
+      },
+    ],
+    [
+      '@semantic-release/release-notes-generator',
+      {
+        preset: 'conventionalcommits',
+        presetConfig: {
+          preMajor: true,
+        },
+      },
+    ],
     [
       '@semantic-release/changelog',
       {

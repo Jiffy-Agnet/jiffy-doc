@@ -8,7 +8,8 @@
     "start": "next start",
     "types:check": "next typegen && tsc --noEmit",
     "lint": "eslint",
-    "prepare": "husky"
+    "prepare": "husky",
+    "release": "semantic-release"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs}": "pnpm lint"
