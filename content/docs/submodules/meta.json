@@ -1,0 +1,6 @@
+{
+  "root": true,
+  "title": "Submodules",
+  "icon": "Blocks",
+  "pages": ["edge-component", "gateway", "agent", "sandbox"]
+}
