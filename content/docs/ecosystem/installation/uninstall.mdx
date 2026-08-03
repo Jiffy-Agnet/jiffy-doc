@@ -1,0 +1,92 @@
+---
+title: Uninstall
+description: Stop and remove Jiffy's containers and volumes, and revoke the tokens you issued during setup.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+Removing Jiffy means stopping and deleting the Gateway's containers and volumes, then revoking every token you handed out while setting it up — the Gateway itself doesn't hold anything that needs cleaning up beyond that.
+
+<Callout type="warn">
+Removing volumes deletes the Gateway's SQLite database, including task history. If you need to keep a record of past tasks, back up the `db` volume (or your `SANDBOX_OPENCODE_CONFIG_PATH`/data mounts, if customized) before continuing.
+</Callout>
+
+## Step 1 — Stop and remove the containers and volumes
+
+From the `jiffy_gateway` directory:
+
+```bash
+docker compose down --volumes
+```
+
+This stops `web`, `celery`, `redis`, and `docker-socket-proxy`, removes the containers, and deletes their volumes (including the SQLite database and the Redis data directory). If you deployed with the production Compose file instead, target it explicitly:
+
+```bash
+docker compose -f docker-compose.prod.yml down --volumes
+```
+
+## Step 2 — Remove the images (optional)
+
+If you also want to reclaim disk space from the pulled/built images:
+
+```bash
+docker rmi $(docker compose images -q)
+docker rmi jiffy-sandbox:1.1.1
+```
+
+The sandbox image tag should match whatever `SANDBOX_IMAGE` was set to in your `.env`.
+
+## Step 3 — Revoke issued tokens
+
+Removing the Gateway doesn't invalidate any of the credentials it was configured with — those live with your git provider and OpenRouter, so they need to be revoked separately:
+
+<Steps>
+<Step>
+### Revoke the git provider token(s)
+
+<Tabs items={['GitHub', 'GitLab', 'Gitea']}>
+<Tab value="GitHub">
+
+Delete the fine-grained Personal Access Token used as `JIFFY_REPO_PAT` under **Settings → Developer settings → Personal access tokens**.
+
+</Tab>
+<Tab value="GitLab">
+
+Revoke the project/personal access token used as `GITLAB_API_TOKEN` under **Settings → Access Tokens**, and remove the webhook pointing at your relay under **Settings → Webhooks**.
+
+</Tab>
+<Tab value="Gitea">
+
+Revoke the `GITEA_ACCESS_TOKEN` under **Settings → Applications → Access Tokens**.
+
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+### Remove the Edge Component from each connected repository
+
+Delete `.github/workflows/jiffy.yml` (GitHub), `.gitea/workflows/jiffy.yml` (Gitea), or decommission the webhook relay process and its GitLab webhook (GitLab) from every repository you connected.
+</Step>
+
+<Step>
+### Discard your OpenRouter API key
+
+If the key was created solely for this Jiffy instance, revoke it from your [OpenRouter dashboard](https://openrouter.ai/) as well.
+</Step>
+</Steps>
+
+<Callout type="info">
+The per-provider ingestion secrets (`GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, `GITEA_INGEST_TOKEN`) only lived in your `.env` and each Edge Component's configuration — once both are gone, there's nothing further to revoke for those.
+</Callout>
+
+## Step 4 — Delete the local clone (optional)
+
+```bash
+cd ..
+rm -rf jiffy_gateway
+```
+
+This also removes the local `.env` file and anything the installer generated alongside it.
