@@ -1,0 +1,289 @@
+---
+title: Deployment
+description: Step-by-step guide to self-hosting the full Jiffy ecosystem — Gateway, Sandbox, and an Edge Component for GitHub, GitLab, or Gitea.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+This guide walks through standing up the entire Jiffy ecosystem on your own infrastructure: the **Gateway** (the Django/Celery/Redis server), the **Sandbox** (the isolated container the Agent runs in), and one **Edge Component** per git provider you want to connect (GitHub, GitLab, and/or Gitea).
+
+<Callout type="info">
+None of this is a managed service — everything below runs on infrastructure you control. Jiffy never needs your code to leave your network unless you configure it to.
+</Callout>
+
+## Prerequisites
+
+- Docker and Docker Compose
+- A host with outbound network access (to your git provider and to package registries the Agent may need during a task)
+- One access token per repository you connect, with permission to push branches and open PRs/MRs on that repo
+- (GitLab only) somewhere to run a small, stateless webhook relay process — a VM, a container, or a serverless function near your GitLab instance
+
+## Architecture at a glance
+
+```
+Issue mention (@jiffy) ──▶ Edge Component ──▶ Gateway (queue) ──▶ Sandbox (Agent runs)
+                                                                          │
+                     Issue/MR comment (report + PR link) ◀── PR opened ◀─┘
+```
+
+The Edge Component is the only thing that lives in your git provider (a GitHub Action, a Gitea Action, or a webhook relay for GitLab) — it's what keeps unvalidated noise from ever reaching the Gateway. Everything else (queueing, isolated execution, commit/push/PR, reporting) is the Gateway's job.
+
+## Step 1 — Get the Gateway running
+
+<Steps>
+<Step>
+### Clone the repository
+
+```bash
+git clone https://github.com/javadib/jiffy_gateway.git
+cd jiffy_gateway
+```
+</Step>
+
+<Step>
+### Configure the environment
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+At minimum, set these for a real deployment (not just local testing):
+
+| Variable | Set to |
+|---|---|
+| `SECRET_KEY` | A random value — never keep the `change-me-in-production` default |
+| `DEBUG` | `False` |
+| `ALLOWED_HOSTS` | Your Gateway's real hostname(s) |
+| `REDIS_PASSWORD` | A strong password (the prod Compose file requires Redis auth) |
+| `SANDBOX_OPENCODE_CONFIG_PATH` | Leave this to the value already wired in `docker-compose.prod.yml` — don't hand-edit it to a local filesystem path |
+
+Then generate one ingestion secret **per provider you plan to connect** — never reuse a secret across providers:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Put each result in the matching variable: `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, `GITEA_INGEST_TOKEN`. You'll use these again in [Step 2](#step-2--connect-a-repository) when configuring each Edge Component.
+</Step>
+
+<Step>
+### Start the stack
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+This brings up four services on an internal Docker network: `web` (the Django app), `celery` (the task worker), `redis`, and `docker-socket-proxy` (a restricted proxy so `celery` can manage Sandbox containers without direct access to the host's Docker socket).
+
+<Callout type="info">
+Database migrations run automatically — the container's entrypoint runs `manage.py migrate` before starting the app. You don't need a separate migrate step.
+</Callout>
+</Step>
+
+<Step>
+### Build the Sandbox image
+
+```bash
+docker build -t jiffy-sandbox:1.1.1 ./docker/sandbox
+```
+
+The tag must match `SANDBOX_IMAGE` in your `.env`. If you skip this, the Celery worker will build it automatically on first use via the Docker Socket Proxy's `BUILD` permission — building it ahead of time just avoids a delay on your first task.
+</Step>
+
+<Step>
+### Verify the Gateway is up
+
+```bash
+curl -f http://localhost:8080/
+docker compose -f docker-compose.prod.yml logs -f celery
+```
+
+You should see the Celery worker log that it's connected to Redis and listening on the `execute` queue.
+</Step>
+</Steps>
+
+<Callout type="warn">
+`docker-compose.prod.yml` currently overrides the container command to Django's `runserver`. For real production traffic, consider dropping that override so the image's own `gunicorn` entrypoint is used instead.
+</Callout>
+
+## Step 2 — Connect a repository
+
+Pick the provider(s) you want to enable. Each one only needs a small Edge Component added to the target repository — the Gateway itself is provider-agnostic.
+
+<Tabs items={['GitHub', 'GitLab', 'Gitea']}>
+<Tab value="GitHub">
+
+Create `.github/workflows/jiffy.yml` in the repository you want Jiffy to work on. It triggers on new issues and issue comments, checks for an `@jiffy` mention, collects the full thread, and posts it to `POST /api/github/ingestion`.
+
+**Repository secrets/variables** (Settings → Secrets and variables → Actions):
+
+| Name | Type | Description |
+|---|---|---|
+| `JIFFY_GATEWAY_URL` | secret | Base URL of your Gateway, e.g. `https://jiffy.example.com` |
+| `JIFFY_GITHUB_INGEST_TOKEN` | secret | Must match `GITHUB_INGEST_TOKEN` on the Gateway |
+| `JIFFY_REPO_PAT` | secret | Fine-grained PAT with Contents (R/W) + Pull requests (R/W) on this repo — used instead of the short-lived default `GITHUB_TOKEN`, since Jiffy's push/PR happens asynchronously after the workflow run ends |
+| `JIFFY_BOT_LOGIN` | variable | The bot account's GitHub login, used to tell agent replies apart from human ones |
+| `JIFFY_USER_WHITELIST` | variable (optional) | Comma-separated GitHub usernames allowed to trigger Jiffy — if unset, Jiffy is disabled on the repo and it says so once |
+
+```yaml title=".github/workflows/jiffy.yml"
+name: Jiffy Dispatch
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@jiffy')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@jiffy'))
+    steps:
+      - name: Collect thread and dispatch to Jiffy Gateway
+        uses: actions/github-script@v9
+        env:
+          JIFFY_URL: ${{ secrets.JIFFY_GATEWAY_URL }}
+          JIFFY_INGEST_TOKEN: ${{ secrets.JIFFY_GITHUB_INGEST_TOKEN }}
+          JIFFY_BOT_LOGIN: ${{ vars.JIFFY_BOT_LOGIN }}
+          JIFFY_USER_WHITELIST: ${{ vars.JIFFY_USER_WHITELIST }}
+          REPO_TOKEN: ${{ secrets.JIFFY_REPO_PAT }}
+        with:
+          script: |
+            const issueNumber = context.payload.issue.number;
+            const whitelist = (process.env.JIFFY_USER_WHITELIST || '')
+              .split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+            if (!whitelist.includes(String(context.actor).toLowerCase())) {
+              console.log('Not in user_whitelist — skipping.');
+              return;
+            }
+
+            const issue = await github.rest.issues.get({ ...context.repo, issue_number: issueNumber });
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: issueNumber });
+            const botLogin = process.env.JIFFY_BOT_LOGIN || '';
+
+            const turns = [
+              { role: 'user', author: issue.data.user.login, body: issue.data.body || '', created_at: issue.data.created_at },
+              ...comments.map(c => ({
+                role: c.user.login === botLogin ? 'agent' : 'user',
+                author: c.user.login, body: c.body || '', created_at: c.created_at,
+              })),
+            ];
+
+            const repoToken = process.env.REPO_TOKEN;
+            const payload = {
+              repo: {
+                url: `https://github.com/${context.repo.owner}/${context.repo.repo}.git`,
+                token: repoToken,
+                username: context.actor,
+              },
+              issue: { turns, external_issue_id: String(issueNumber) },
+              callback: {
+                url: `https://api.github.com/repos/${context.repo.owner}/${context.repo.repo}/issues/${issueNumber}/comments`,
+                secret: repoToken,
+              },
+            };
+
+            const response = await fetch(`${process.env.JIFFY_URL}/api/github/ingestion`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-JIFFY-TOKEN': process.env.JIFFY_INGEST_TOKEN },
+              body: JSON.stringify(payload),
+            });
+            if (response.status >= 400) {
+              core.setFailed(`Jiffy ingestion failed: ${response.status} ${await response.text()}`);
+            }
+```
+
+<Callout type="warn">
+Use the long-lived `JIFFY_REPO_PAT`, never the default `GITHUB_TOKEN` — it expires before the Gateway's async worker finishes pushing and opening the PR.
+</Callout>
+
+</Tab>
+<Tab value="GitLab">
+
+GitLab CI doesn't trigger natively on issue/comment mentions, so a small stateless **relay service** sits in between: it receives GitLab webhooks, checks for `@jiffy`, fetches the full thread via the GitLab API, and forwards it to `POST /api/gitlab/ingestion`. There's no `.gitlab-ci.yml` job or Pipeline Trigger involved.
+
+```
+GitLab webhook (Issues + Comments) ──▶ Relay ──▶ Gateway /api/gitlab/ingestion
+```
+
+**Relay environment variables:**
+
+| Variable | Description |
+|---|---|
+| `GITLAB_WEBHOOK_SECRET` | Compared against the incoming `X-Gitlab-Token` header |
+| `GITLAB_API_TOKEN` | GitLab PAT/project token with `read_api` + `write_repository`; also used as the callback secret |
+| `CI_API_V4_URL` | e.g. `https://gitlab.com/api/v4`, or your self-managed instance's API URL |
+| `JIFFY_GATEWAY_URL` | Base URL of your Gateway |
+| `JIFFY_INGEST_TOKEN` | Must match `GITLAB_INGEST_TOKEN` on the Gateway |
+
+**GitLab project setup** (Settings → Webhooks): URL = your relay's endpoint, Secret Token = `GITLAB_WEBHOOK_SECRET`, trigger on **Issues events** and **Comments**.
+
+The full relay implementation (a ~150-line Python script using only the standard library) is documented in the Gateway repo's [`docs/jiffy-gitlab-setup.md`](https://github.com/javadib/jiffy_gateway/blob/master/docs/jiffy-gitlab-setup.md) — copy it directly and run it behind a process supervisor (systemd, supervisord, or a container with a restart policy).
+
+<Callout type="warn">
+Keep `GITLAB_WEBHOOK_SECRET`, `GITLAB_API_TOKEN`, and `JIFFY_INGEST_TOKEN` as three separate credentials — don't reuse one for another. If the relay goes down, all `@jiffy` mentions on that project are silently ignored, so monitor it.
+</Callout>
+
+</Tab>
+<Tab value="Gitea">
+
+Create `.gitea/workflows/jiffy.yml`. Gitea Actions supports the same trigger/condition syntax as GitHub, but **not** `actions/github-script` or any JS-based `actions/*` — everything here is plain `bash` + `curl` (+ `jq` or `python3`) against the Gitea REST API, dispatching to `POST /api/gitea/ingestion`.
+
+**Repository secrets** (Settings → Actions → Secrets):
+
+| Name | Description |
+|---|---|
+| `GITEA_ACCESS_TOKEN` | Gitea token with `repo` + `issue` scope, long expiry (1 year or none) |
+| `JIFFY_GITEA_INGEST_TOKEN` | Must match `GITEA_INGEST_TOKEN` on the Gateway |
+| `JIFFY_GATEWAY_URL` | Base URL of your Gateway |
+
+Key differences from the GitHub version: `github.server_url` resolves to your Gitea instance's URL (a Gitea Actions compatibility feature, not a bug), and every secret must be passed through `env:` rather than interpolated directly into `run:` shell strings — Gitea masks `env:`-sourced secrets in logs, but raw `${{ }}` interpolation into a shell command can still leak values via error output.
+
+The complete working workflow (issue/comment fetch, thread assembly, and dispatch) is in the Gateway repo's [`docs/gitea_setup.md`](https://github.com/javadib/jiffy_gateway/blob/master/docs/gitea_setup.md) — copy it directly into `.gitea/workflows/jiffy.yml`.
+
+</Tab>
+</Tabs>
+
+## Step 3 — Verify end-to-end
+
+1. Open an Issue on the connected repo and mention the bot, e.g. `@jiffy add a health-check endpoint`.
+2. Confirm the Edge Component fired (check the Action/relay logs) and the Gateway received it (`docker compose -f docker-compose.prod.yml logs -f celery`).
+3. Wait for the task to complete — you should see a new branch, an opened PR/MR, and a summary comment posted back on the original Issue.
+
+## Production checklist
+
+- `DEBUG=False`, a real `SECRET_KEY`, and `ALLOWED_HOSTS` set to your actual domain
+- `REDIS_PASSWORD` set — the prod Compose file requires Redis auth
+- The Gateway sits behind a reverse proxy (nginx, Caddy, Traefik, …) terminating TLS — nothing in this stack does TLS itself
+- The Docker Socket Proxy is never exposed on a host port (it isn't, by default) — only reachable from `web`/`celery` on the internal network
+- Put a calendar reminder to rotate every long-lived PAT/token before it expires — see [`SECRETS.md`](https://github.com/javadib/jiffy_gateway/blob/master/SECRETS.md) for the full rotation procedure
+- SQLite is fine at low volume (a few hundred requests/day); a config-only move to PostgreSQL is on the roadmap for larger deployments
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Ingestion request returns `401` | The Edge Component's ingest token doesn't match the Gateway's `<PROVIDER>_INGEST_TOKEN` |
+| Task queues but push/PR/MR never happens | The repo token (`JIFFY_REPO_PAT` / `GITEA_ACCESS_TOKEN` / `GITLAB_API_TOKEN`) expired mid-task — these need long expiries since tasks run asynchronously |
+| Celery can't start Sandbox containers | Check the Docker Socket Proxy's enabled endpoint groups (`CONTAINERS`, `IMAGES`, `BUILD`, `NETWORKS`, `EXEC`, `POST`) |
+| `@jiffy` mention does nothing on GitHub/Gitea | Check `JIFFY_USER_WHITELIST` is set and includes the mentioning user |
+
+## Next steps
+
+<Cards>
+  <Card title="Gateway" href="/docs/submodules/gateway" description="How task ingestion, queueing, and callbacks work" />
+  <Card title="Sandbox" href="/docs/submodules/sandbox" description="What runs inside the isolated execution environment" />
+  <Card title="Edge Component" href="/docs/submodules/edge-component" description="Mention detection and thread collection per provider" />
+  <Card title="Agent" href="/docs/submodules/agent" description="How the coding agent executes a task" />
+</Cards>

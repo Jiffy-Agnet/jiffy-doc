@@ -1,0 +1,91 @@
+---
+title: Introduction
+description: What Jiffy is, the problem it solves, and how its channel-agnostic, self-hosted pipeline turns an @jiffy mention into a reviewed Pull Request.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Jiffy is an open-source, **self-hosted autonomous software engineering platform**. It lets any team delegate development work to an AI coding agent from wherever that work already gets requested — a mentioned Issue on GitHub, GitLab, or Gitea, a chat message, or a direct API call — and get the result back as a **reviewed Pull Request**, without any manual commit, push, or PR work.
+
+Instead of moving your team onto a platform-bundled coding agent, Jiffy runs on **your own infrastructure**: your code stays in your network, your git provider stays the source of truth, and the task flow (mention → validation → queue → execution → PR) is fully decoupled from any single channel or model vendor.
+
+<Callout type="info">
+Jiffy is built for low request volumes — hundreds of tasks per day — not massive-scale load. Its job is to be a dependable, low-overhead way for a team to have the bot pick up clearly-scoped development tasks.
+</Callout>
+
+## How it works
+
+The end-to-end flow is short, and each stage has exactly one responsibility:
+
+<Steps>
+<Step>
+### Mention the bot
+
+A developer mentions `@jiffy` on an Issue (or an Issue comment) in your repository, describing the task to be done.
+</Step>
+
+<Step>
+### Edge Component validates and collects
+
+A lightweight **Edge Component** running in your own repository (a GitHub Action, a Gitea Action, or a small webhook relay for GitLab) verifies the bot was actually mentioned. If it wasn't, nothing happens — no noise ever reaches the Gateway. On a valid mention, it collects the full Issue thread (all comments) and sends it to your Jiffy server.
+</Step>
+
+<Step>
+### Gateway queues the task
+
+The **Gateway** (a Django/Celery/Redis server) validates the ingestion request, queues the task, and hands it to a free worker.
+</Step>
+
+<Step>
+### Sandbox executes in isolation
+
+The worker runs a **coding Agent** inside an ephemeral, resource-limited Docker container against an isolated copy of your repository, so nothing outside that container can be affected.
+</Step>
+
+<Step>
+### PR and report
+
+When finished, Jiffy commits the changes, pushes a new branch, and opens a Pull Request. If you didn't specify a branch name, one is generated from the task title (e.g. `Jiffy/add-rate-limiting`). A summary report with the PR link is posted back as a comment on the same Issue.
+</Step>
+</Steps>
+
+```
+Issue mention (@jiffy) ──▶ Edge Component ──▶ Gateway (queue) ──▶ Sandbox (Agent runs)
+                                                                          │
+                     Issue/MR comment (report + PR link) ◀── PR opened ◀───┘
+```
+
+## Design principles
+
+Everything in Jiffy follows from a few core principles:
+
+- **Fully self-hosted** — runs on your own infrastructure; no code ever needs to leave your network unless you configure it to.
+- **Channel-agnostic** — any place a task can be described can become a Jiffy entry point. GitHub, GitLab, and Gitea Issues are supported today; Telegram and a public API are on the roadmap. New channels plug into the same core pipeline.
+- **Model-agnostic execution** — bring your own coding agent/LLM backend instead of being locked to one vendor.
+- **Isolated execution** — every task runs in an ephemeral, resource-limited container, so nothing outside its sandbox can be affected.
+- **No noise, low overhead** — mention detection happens at the edge (in your repo's own CI), so only validated requests ever reach the Gateway. Designed for low request volumes (hundreds/day), not massive scale.
+- **Automatic branch naming** — generates a sensible branch name from the task when you don't provide one.
+- **Traceable task status** — every task's state (queued, running, done, failed) is tracked and inspectable.
+- **Extensible core** — the execution pipeline (queueing, isolated execution, commit/push/PR, reporting) is fully decoupled from how a task enters the system. Adding a channel means writing an adapter, not touching the core.
+
+## Architecture at a glance
+
+- **Platform core**: Django (Django ORM, SQLite by default — designed to move to PostgreSQL with a config-only change as the project grows)
+- **Task queue**: Celery, backed by Redis
+- **Execution**: Docker, one ephemeral container per task
+- **Channel adapters**: per-source integrations (GitHub Action / GitLab CI / Gitea Action today; Telegram bot and a public API planned) responsible only for detecting a valid task request and forwarding the full task context — the platform core has no channel-specific logic
+
+## Getting started
+
+To evaluate Jiffy locally, follow the [Installation](/docs/ecosystem/installation) guide. When you're ready to stand up a hardened production deployment on your own infrastructure, see [Deployment](/docs/ecosystem/deployment).
+
+For a deeper look at each piece of the system, see the submodule docs:
+
+<Cards>
+  <Card title="Edge Component" href="/docs/submodules/edge-component" description="Mention detection and thread collection per provider" />
+  <Card title="Gateway" href="/docs/submodules/gateway" description="How task ingestion, queueing, and callbacks work" />
+  <Card title="Agent" href="/docs/submodules/agent" description="How the coding agent executes a task" />
+  <Card title="Sandbox" href="/docs/submodules/sandbox" description="What runs inside the isolated execution environment" />
+</Cards>

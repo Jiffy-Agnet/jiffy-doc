@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "jiffy-task-planner": {
+      "source": "javadib/jiffy_gateway",
+      "sourceType": "github",
+      "skillPath": "skills/jiffy-task-planner/SKILL.md",
+      "computedHash": "e1c69d5f1da86bf34dd6154cb27a85a02ea84e45a64534d4604f4587a76c4577"
+    }
+  }
+}

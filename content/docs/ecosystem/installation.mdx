@@ -1,0 +1,108 @@
+---
+title: Installation
+description: Get Jiffy running locally for evaluation and development — clone, configure, and start the stack with Docker Compose.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+This guide gets the Jiffy **Gateway** running locally so you can evaluate the platform and try your first task end-to-end. It uses the default `docker-compose.yml` (development configuration).
+
+When you're ready to move to a hardened, always-on production deployment on your own infrastructure — reverse proxy, TLS, Redis auth, restricted Docker access — follow the [Deployment](/docs/ecosystem/deployment) guide instead. This page intentionally does not duplicate it.
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- **Docker and Docker Compose** — the Gateway, its worker, Redis, and the Sandbox all run as containers
+- **A git provider account/token** with permission to push branches and open PRs on the repo(s) you want Jiffy to work on — you'll wire this up in your Edge Component after the Gateway is up
+- **Access to your chosen coding agent/LLM backend** — Jiffy is model-agnostic, but the Sandbox needs API credentials for the agent backend it runs
+
+<Callout type="info">
+You can bring the whole stack up and pass the health check before connecting any repository — the per-provider Edge Component setup is a separate, second step.
+</Callout>
+
+## Step 1 — Clone the repository
+
+<Steps>
+<Step>
+### Clone the Gateway
+
+```bash
+git clone https://github.com/javadib/jiffy_gateway.git
+cd jiffy_gateway
+```
+</Step>
+
+<Step>
+### Create the environment file
+
+```bash
+cp .env.example .env
+```
+
+The development defaults in `.env.example` (`DEBUG=True`, `SECRET_KEY=change-me-in-production`, `ALLOWED_HOSTS=127.0.0.1,localhost`) are fine for local evaluation. `REDIS_PASSWORD` can stay empty for the bundled development Redis.
+
+<Callout type="warn">
+`.env` contains secrets and is excluded from version control. Never commit it, and never push real values to a repository.
+</Callout>
+</Step>
+
+<Step>
+### Generate the per-provider ingestion secrets
+
+The Gateway authenticates each Edge Component's requests with a per-provider shared secret sent in the `X-JIFFY-TOKEN` header. Generate one secret **per provider you plan to connect** — never reuse a secret across providers:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Put each result in the matching variable in `.env`: `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, `GITEA_INGEST_TOKEN`. You'll reuse these values later when configuring each Edge Component.
+
+<Callout type="warn">
+Replace the placeholder `GITHUB_INGEST_TOKEN=123456789alcjQJE!@O!@SFsdf2312` in `.env.example` with a freshly generated secret — the example value is public and not a real credential.
+</Callout>
+</Step>
+
+<Step>
+### Start the stack
+
+```bash
+docker compose up -d
+```
+
+This brings up four services on an internal Docker network: `web` (the Django app, exposed on port `8000`), `celery` (the task worker, listening on the `execute` queue), `redis`, and `docker-socket-proxy` (a restricted proxy so `celery` can manage Sandbox containers without raw access to the host's Docker socket).
+
+<Callout type="info">
+Database migrations run automatically — the container's entrypoint runs `manage.py migrate --noinput` before starting the app. There is no manual `manage.py migrate` step when running inside Docker.
+</Callout>
+</Step>
+
+<Step>
+### Verify the Gateway is up
+
+```bash
+curl -f http://localhost:8000/
+docker compose logs -f celery
+```
+
+The web container should respond on port `8000` (the development Compose file, not the production one), and the Celery worker should log that it connected to Redis and is listening on the `execute` queue.
+</Step>
+</Steps>
+
+<Callout type="info">
+The Sandbox image (`SANDBOX_IMAGE`, `jiffy-sandbox:1.1.1` by default) is built automatically on your first task — the Celery worker builds it through the Docker Socket Proxy's `BUILD` permission. The first run just takes a little longer.
+</Callout>
+
+## Next steps
+
+1. **Connect a repository** — add the per-provider Edge Component (GitHub Action, GitLab webhook relay, or Gitea Action) to the repo you want Jiffy to work on. See [Step 2 — Connect a repository](/docs/ecosystem/deployment#step-2--connect-a-repository) in the Deployment guide.
+2. **Try your first task** — open an Issue and mention the bot, e.g. `@jiffy add a health-check endpoint`, then watch the thread for the branch, PR, and summary report.
+3. **Go to production** — when you're done evaluating, follow [Deployment](/docs/ecosystem/deployment) for the hardened self-hosting walkthrough.
+
+<Cards>
+  <Card title="Deployment" href="/docs/ecosystem/deployment" description="Hardened production self-hosting: prod Compose, reverse proxy, TLS, and security checklist" />
+  <Card title="Edge Component" href="/docs/submodules/edge-component" description="Mention detection and thread collection per provider" />
+  <Card title="Gateway" href="/docs/submodules/gateway" description="How task ingestion, queueing, and callbacks work" />
+</Cards>
