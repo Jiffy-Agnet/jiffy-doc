@@ -1,0 +1,36 @@
+---
+title: Features
+description: Key capabilities of the Jiffy platform — multi-provider support, isolated execution, automated PR delivery, and a thin, extensible Gateway.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Multi-provider support
+
+Jiffy treats GitHub, GitLab, and Gitea as first-class, interchangeable entry points. Each provider gets its own Edge Component and its own ingestion endpoint and shared secret on the Gateway, but all three feed the same task pipeline — there's no "primary" provider with the others bolted on afterward.
+
+- **GitHub** — a GitHub Action triggers on new Issues and Issue comments.
+- **GitLab** — a small webhook relay triggers on Issue and comment events (GitLab CI has no native mention-triggered job for this).
+- **Gitea** — a Gitea Action, written in plain `bash` + `curl`/`jq` since Gitea Actions doesn't support GitHub's JS-based actions.
+
+## Isolated sandbox execution
+
+Every task runs in its own ephemeral Docker container — a Debian bookworm image with the language toolchains (`nvm`, `uv`, `gvm`) and provider CLIs (`gh`, `glab`, `tea`) the agent might need. The container works against an isolated copy of the repository, and is torn down once the task finishes.
+
+The Gateway's worker never touches the host's Docker socket directly. A **Docker Socket Proxy** (`tecnativa/docker-socket-proxy`) sits in between and exposes only the specific Docker API operations the worker needs — so a misbehaving or compromised task can't reach anything else on the host.
+
+## Automated PR delivery
+
+The agent doesn't just write code — it finishes the job. It commits its changes, pushes a new branch (auto-named from the task if you didn't specify one, e.g. `Jiffy/add-rate-limiting`), and opens a Pull Request. A summary of what was done, with a link to the PR, is posted back as a comment on the originating Issue, so the whole task lifecycle is visible in one thread.
+
+## Thin-Gateway design
+
+The Gateway's job is deliberately narrow: authenticate a request, queue it, run it in a sandbox, and report back. All provider-specific logic — detecting a mention, assembling the Issue thread, formatting the callback — lives in the Edge Component, not the Gateway. That keeps the Gateway simple to run and reason about (Django + Celery + Redis + SQLite), and keeps provider quirks from leaking into the core pipeline.
+
+<Callout type="info">
+This split is what makes multi-provider support possible without multiplying the Gateway's complexity — adding a provider means writing an Edge Component against the existing ingestion contract, not extending the Gateway itself.
+</Callout>
+
+## Extensible to future channels
+
+Because the Gateway only cares about receiving a well-formed, pre-filtered task payload, the entry point doesn't have to be a git provider's Issue tracker. The same ingestion contract can be satisfied by a chat app integration (e.g. a Telegram or Slack bot) or a direct API call — channels currently on the roadmap — without changing anything downstream of the Gateway.
