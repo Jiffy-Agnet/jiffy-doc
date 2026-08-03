@@ -1,0 +1,56 @@
+---
+title: Prerequisites
+description: What you need before installing Jiffy — Docker, a git provider token, an OpenRouter API key, and minimum host resources.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Everything below is needed before you run the installer. None of it is Jiffy-specific infrastructure — it's the host, the container runtime, and the credentials the Gateway and sandbox need to reach your git provider and your model backend.
+
+## Docker
+
+Jiffy's Gateway, its Celery worker, Redis, and the sandbox all run as containers.
+
+- **Docker Engine** 24+ and the **Compose plugin** (`docker compose`, not the standalone `docker-compose` v1)
+- The user running the installer needs permission to talk to the Docker daemon (in the `docker` group, or root)
+
+## Docker Socket Proxy
+
+The Celery worker needs to create and manage sandbox containers, but it should never have raw access to the host's Docker socket — a compromised task container could otherwise reach everything else on the host. Jiffy puts [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) in between: it's pulled automatically as part of the stack, so there's nothing to install by hand, but it does mean the host needs outbound access to pull that image (and the Gateway/sandbox images) on first run.
+
+<Callout type="warn">
+Never expose the Docker Socket Proxy on a host port. It should only be reachable from the `web`/`celery` services on the stack's internal Docker network — this is the default, and shouldn't be changed.
+</Callout>
+
+## A git provider token
+
+Jiffy needs a token with permission to push branches and open Pull/Merge Requests on the repositories you connect. Generate one for whichever provider(s) you plan to use — you'll wire it into the matching Edge Component, not the Gateway itself:
+
+| Provider | Token type | Required scopes |
+|---|---|---|
+| GitHub | Fine-grained Personal Access Token | Contents (Read/Write), Pull requests (Read/Write) |
+| GitLab | Project or personal access token | `read_api`, `write_repository` |
+| Gitea | Access token | `repo`, `issue` |
+
+<Callout type="info">
+Use a long-lived token, not a short-lived CI-provided one (like GitHub Actions' default `GITHUB_TOKEN`). Jiffy's push and PR happen asynchronously, after the triggering CI run has already ended.
+</Callout>
+
+## An OpenRouter API key
+
+The sandbox's coding agent (OpenCode) needs an LLM backend to run against. Jiffy uses [OpenRouter](https://openrouter.ai/) for model access — sign up and generate an API key, then set it as `OPENROUTER_API_KEY` when you configure the Gateway.
+
+## Minimum resource requirements
+
+| Resource | Minimum | Notes |
+|---|---|---|
+| CPU | 2 vCPU | 1 for the Gateway stack (web, worker, Redis), 1 free for a running sandbox |
+| Memory | 4 GB RAM | The sandbox image itself, plus whatever the task's toolchain (Node, Python, Go) needs at runtime |
+| Disk | 20 GB free | Docker images (Gateway, sandbox, Redis, proxy) plus room for cloned repositories per task |
+| Network | Outbound HTTPS | To your git provider, OpenRouter, and package registries the agent may need mid-task |
+
+<Callout type="info">
+These are minimums for evaluating Jiffy at low volume (its intended use — hundreds of tasks per day, not concurrent high-throughput automation). Add more CPU/RAM if you expect several sandboxes running at once.
+</Callout>
+
+Once these are in place, continue to [Installation](/docs/ecosystem/installation/quickstart) for the quick-start path, or [Manual Installation](/docs/ecosystem/installation/manual-installation) if you'd rather configure each piece by hand.
