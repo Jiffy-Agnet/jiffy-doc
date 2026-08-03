@@ -1,0 +1,33 @@
+---
+title: Comparison
+description: How Jiffy's self-hosted, thin-Gateway architecture differs from generic CI bots and hosted AI coding agents.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Jiffy sits at the intersection of two categories of tooling — CI/automation bots and AI coding agents — without being a straightforward member of either. This page is a qualitative look at where it differs, not a benchmark; it doesn't claim to be faster, cheaper, or more accurate than any specific product.
+
+## Versus generic CI bots
+
+CI bots (lint-fixers, dependency-update bots, label automations) are good at fast, mechanical, well-defined changes triggered by rules. What they generally don't do is read an open-ended Issue thread — a human description of a problem — and write the actual fix.
+
+- **Task input**: a CI bot reacts to structured events (a new dependency version, a failing check). Jiffy reacts to a natural-language Issue thread — the same place a human would describe the task to a teammate.
+- **Output**: a CI bot's change is usually a small, mechanical diff. Jiffy's output is a full implementation attempt, arrived at through the same clone → understand → change → commit → push → PR flow a developer would follow.
+- **Where it runs**: most CI bots run as part of your existing CI provider's hosted runners. Jiffy's Gateway and sandbox are infrastructure you deploy and control yourself.
+
+## Versus hosted AI coding agents
+
+A number of AI coding agents are offered as a managed, hosted service: you grant the vendor's platform access to your repository, and it runs the agent on infrastructure you don't control.
+
+- **Self-hosted by default** — Jiffy's Gateway and sandbox run on your own infrastructure. Your repository, Issue content, and task history never pass through a third-party platform unless you choose to connect a third-party model backend as the agent's LLM.
+- **Thin-Gateway, edge-filtered architecture** — mention detection happens at the edge, inside your own CI (or a relay you run), before anything reaches your Gateway. A hosted agent typically has its platform watching your repository directly; Jiffy's Gateway only ever sees requests that already passed a same-repo validity check.
+- **Provider-neutral by construction** — because provider-specific logic lives entirely in the Edge Component, GitHub, GitLab, and Gitea are equally first-class. Many hosted agents are built around one platform's integration surface first.
+- **You own the execution environment** — the sandbox's image, resource limits, and installed toolchains are yours to configure and audit, rather than an opaque part of a vendor's platform.
+
+<Callout type="info">
+None of this makes Jiffy a drop-in replacement for a fully managed product — you're taking on running the Gateway and sandbox yourself. The trade is control and data locality in exchange for operational responsibility.
+</Callout>
+
+## Where Jiffy fits
+
+Jiffy is a good fit for teams that already default to Issue-driven workflows, want the agent's execution environment on their own infrastructure, and need GitHub/GitLab/Gitea to be equally supported rather than one primary platform with others as an afterthought. It's not built to replace a full CI pipeline, and it's explicitly scoped for low request volumes rather than organization-wide, high-throughput automation.
