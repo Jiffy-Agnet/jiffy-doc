@@ -1,0 +1,126 @@
+---
+title: Manual Installation
+description: Set up Jiffy by hand — clone the repository, configure .env yourself, start the stack, and verify each provider's ingestion endpoint.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+This walks through the same setup as `install.sh` in [Installation](/docs/ecosystem/installation/quickstart), but with every step done by hand — useful if you want to see exactly what gets configured, or if you're integrating the Gateway into an existing deployment process.
+
+Make sure you've read [Prerequisites](/docs/ecosystem/installation/prerequisites) first.
+
+## Step 1 — Clone the repository
+
+```bash
+git clone https://github.com/javadib/jiffy_gateway.git
+cd jiffy_gateway
+```
+
+## Step 2 — Configure .env by hand
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+Open `.env` and set the following:
+
+| Variable | Value |
+|---|---|
+| `SECRET_KEY` | A random value — never keep the `change-me-in-production` default |
+| `OPENROUTER_API_KEY` | Your OpenRouter API key (see [Prerequisites](/docs/ecosystem/installation/prerequisites)) |
+| `REDIS_PASSWORD` | A strong password, or leave empty for local-only evaluation |
+| `GITHUB_INGEST_TOKEN` / `GITLAB_INGEST_TOKEN` / `GITEA_INGEST_TOKEN` | A random secret **per provider you plan to connect** — generate one for each with the command below |
+
+Generate each ingestion secret yourself:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Never reuse one secret across two providers — each is a separate shared secret checked against that provider's `X-JIFFY-TOKEN` header.
+
+<Callout type="warn">
+`.env` contains secrets and is excluded from version control. Never commit it, and never push real values to a repository.
+</Callout>
+
+## Step 3 — Start the stack
+
+Bring the services up with Docker Compose directly:
+
+```bash
+docker compose up -d
+```
+
+This starts four containers on an internal Docker network:
+
+- `web` — the Django app, exposed on port `8000`
+- `celery` — the task worker, listening on the `execute` queue
+- `redis` — the Celery broker
+- `docker-socket-proxy` (`tecnativa/docker-socket-proxy`) — a restricted proxy so `celery` can manage sandbox containers without raw access to the host's Docker socket
+
+If you'd rather start (or restart) a single service without touching the others — for example after editing `.env` — target it by name:
+
+```bash
+docker compose up -d --no-deps web
+```
+
+<Callout type="info">
+Database migrations run automatically — the `web` container's entrypoint runs `manage.py migrate --noinput` before starting the app. There is no separate manual migrate step.
+</Callout>
+
+## Step 4 — Verify the three provider ingestion endpoints
+
+Each provider has its own ingestion route on the Gateway. Before wiring up a real Edge Component, confirm each endpoint is reachable and rejects requests without a valid token — a `401`/`403` here (not a connection error) is what you want to see:
+
+<Tabs items={['GitHub', 'GitLab', 'Gitea']}>
+<Tab value="GitHub">
+
+```bash
+curl -i -X POST http://localhost:8000/api/github/ingestion \
+  -H "Content-Type: application/json" \
+  -H "X-JIFFY-TOKEN: wrong-token" \
+  -d '{}'
+```
+
+</Tab>
+<Tab value="GitLab">
+
+```bash
+curl -i -X POST http://localhost:8000/api/gitlab/ingestion \
+  -H "Content-Type: application/json" \
+  -H "X-JIFFY-TOKEN: wrong-token" \
+  -d '{}'
+```
+
+</Tab>
+<Tab value="Gitea">
+
+```bash
+curl -i -X POST http://localhost:8000/api/gitea/ingestion \
+  -H "Content-Type: application/json" \
+  -H "X-JIFFY-TOKEN: wrong-token" \
+  -d '{}'
+```
+
+</Tab>
+</Tabs>
+
+Then confirm the Gateway is otherwise healthy:
+
+```bash
+curl -f http://localhost:8000/
+docker compose logs -f celery
+```
+
+The Celery worker should log that it connected to Redis and is listening on the `execute` queue.
+
+<Callout type="info">
+Only once you've confirmed an endpoint responds correctly should you configure the matching Edge Component with its real `<PROVIDER>_INGEST_TOKEN` — see the per-provider setup in [Deployment](/docs/ecosystem/deployment#step-2--connect-a-repository).
+</Callout>
+
+## Next steps
+
+Once the stack is up and each endpoint checks out, connect a repository via the matching Edge Component (see [Deployment, Step 2](/docs/ecosystem/deployment#step-2--connect-a-repository)), then open an Issue and mention `@jiffy` to try your first task.

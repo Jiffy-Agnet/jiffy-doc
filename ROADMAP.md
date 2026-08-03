@@ -7,7 +7,7 @@ When an Issue includes a line `Roadmap item: R#`, the agent completing that task
 ## Ecosystem
 
 - [x] R1 — Introduction page (Ecosystem)
-- [ ] R2 — Installation page (Ecosystem)
+- [x] R2 — Installation page (Ecosystem)
 - [x] R3 — Deployment page (Ecosystem)
 - [ ] R4 — Promote Ecosystem/Submodules content from `develop` to `main`
 
