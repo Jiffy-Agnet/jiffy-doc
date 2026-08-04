@@ -1,27 +1,41 @@
 ---
 title: Configuration
-description: Setting up the Edge Component per provider — the GitHub Action, the GitLab pipeline job, the Gitea Action, the X-JIFFY-TOKEN secret, and the Gateway endpoint URL.
+description: The two settings every Edge Component needs — the X-JIFFY-TOKEN ingestion secret and the Gateway endpoint address — and where to find the per-provider setup instructions.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
-import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Configuring the Edge Component means three things, whichever provider you are on:
 
-1. Add the workflow that runs on Issue and Issue comment events.
-2. Store the provider's ingestion secret so the workflow can send it as `X-JIFFY-TOKEN`.
-3. Point the workflow at your Gateway's endpoint URL for that provider.
+1. Add the automation that runs on Issue and Issue comment events.
+2. Store the provider's ingestion secret so it can be sent as `X-JIFFY-TOKEN`.
+3. Point that automation at your Gateway's endpoint address for the provider.
 
 Nothing else needs to be configured. The Edge Component holds no other state.
+
+This page covers the concepts common to all three providers. The step-by-step instructions live in the [Providers](/docs/submodules/edge-component/providers/github) section, one fully detailed section per provider.
 
 ## The two settings every provider needs
 
 | Setting | What it is | Where it comes from |
 |---|---|---|
 | Ingestion secret | The shared secret sent in the `X-JIFFY-TOKEN` header | Generated for you in the Gateway's `.env` as `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, or `GITEA_INGEST_TOKEN` |
-| Gateway endpoint URL | The full address of the ingestion route for this provider | Your Gateway's public base URL, plus the provider's ingestion path |
+| Gateway endpoint address | The full address of the ingestion route for this provider | Your Gateway's base address, plus the provider's ingestion path |
 
-The endpoint URL is your Gateway base URL followed by the route for the provider the workflow runs on:
+### The ingestion secret
+
+Each provider has its own independently configured secret, and a secret is **never** shared across providers. The GitHub secret is valid on the GitHub ingestion route alone, the GitLab secret on the GitLab route alone, and the Gitea secret on the Gitea route alone. A leaked secret therefore cannot be used to submit tasks through a different provider, and rotating one provider's secret never affects the others.
+
+The ingestion secret is not your git provider token. It authenticates the Edge Component to your Gateway and grants no access to the provider itself. The git provider token — the one that later pushes a branch and opens the Pull Request — is configured on the Gateway, not in the repository.
+
+<Callout type="warn">
+Store the ingestion secret as a repository or project secret. Never inline it in a workflow file, never print it in a job log, and never paste it into an Issue or a Pull Request description. Anyone holding it can submit tasks to your Gateway through that provider's route.
+</Callout>
+
+### The Gateway endpoint address
+
+The endpoint is your Gateway's base address followed by the ingestion path for the provider the automation runs on:
 
 | Provider | Endpoint |
 |---|---|
@@ -29,141 +43,41 @@ The endpoint URL is your Gateway base URL followed by the route for the provider
 | GitLab | `https://gateway.example.com/api/gitlab/ingestion` |
 | Gitea | `https://gateway.example.com/api/gitea/ingestion` |
 
-<Callout type="warn">
-Store the ingestion secret as a repository or project secret — never inline it in the workflow file, and never paste it into an Issue or a Pull Request description. Anyone holding it can submit tasks to your Gateway through that provider's route.
-</Callout>
+Two requirements apply everywhere:
 
-## GitHub Action
-
-<Steps>
-<Step>
-### Store the secret
-
-In the repository, go to **Settings → Secrets and variables → Actions** and add:
-
-- `JIFFY_INGEST_TOKEN` — the value of `GITHUB_INGEST_TOKEN` from your Gateway's `.env`
-- `JIFFY_GATEWAY_URL` — your Gateway endpoint, for example `https://gateway.example.com/api/github/ingestion`
-
-The Gateway endpoint is not sensitive, so it can be stored as a variable rather than a secret if you prefer.
-</Step>
-
-<Step>
-### Add the workflow
-
-Create the workflow file in the repository so it runs on Issue and Issue comment events:
-
-```yaml title=".github/workflows/jiffy.yml"
-name: Jiffy Edge Component
-
-on:
-  issues:
-    types: [opened, edited]
-  issue_comment:
-    types: [created, edited]
-
-jobs:
-  forward:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Detect mention and forward the Issue thread
-        env:
-          JIFFY_INGEST_TOKEN: ${{ secrets.JIFFY_INGEST_TOKEN }}
-          JIFFY_GATEWAY_URL: ${{ vars.JIFFY_GATEWAY_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Exit early unless the event body contains a valid @jiffy mention,
-          # then collect the full Issue thread and POST it to the Gateway with:
-          #   X-JIFFY-TOKEN: $JIFFY_INGEST_TOKEN
-```
-
-The `GITHUB_TOKEN` above is only used to read the Issue thread from within the workflow run. It is not the token that later pushes a branch or opens a Pull Request — that one is configured on the Gateway side.
-</Step>
-</Steps>
-
-## GitLab pipeline job
-
-<Steps>
-<Step>
-### Store the secret
-
-In the project, go to **Settings → CI/CD → Variables** and add:
-
-- `JIFFY_INGEST_TOKEN` — the value of `GITLAB_INGEST_TOKEN` from your Gateway's `.env`. Mark it **Masked** and **Protected**.
-- `JIFFY_GATEWAY_URL` — for example `https://gateway.example.com/api/gitlab/ingestion`
-</Step>
-
-<Step>
-### Add the pipeline job
-
-GitLab does not start a pipeline on Issue activity on its own, so the job is triggered by a project webhook configured for **Comments** and **Issues** events, which fires a pipeline trigger:
-
-```yaml title=".gitlab-ci.yml"
-jiffy-edge:
-  stage: .pre
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "trigger"
-  script:
-    # Exit early unless the event body contains a valid @jiffy mention,
-    # then collect the full Issue thread and POST it to $JIFFY_GATEWAY_URL with:
-    #   X-JIFFY-TOKEN: $JIFFY_INGEST_TOKEN
-```
+- **Use encrypted transport.** The ingestion secret travels in a request header.
+- **Match the path to the provider.** Posting to another provider's path causes the Gateway to validate against that provider's secret, which fails even though the secret itself is valid.
 
 <Callout type="info">
-Set the webhook to deliver both Issue events and comment events. A mention that arrives in a follow-up comment is the most common way a task is started, and it is missed entirely if only Issue events are delivered.
+The request is made by the machine running the automation — a hosted runner, a shared runner, or your own act runner — not by the provider's web service. The endpoint must be reachable from wherever that runner is.
 </Callout>
-</Step>
-</Steps>
 
-## Gitea Action
+## What differs between providers
 
-<Steps>
-<Step>
-### Store the secret
+The concepts above are identical everywhere. What changes is how the automation is triggered, and that determines how much setup each provider needs:
 
-In the repository, go to **Settings → Actions → Secrets** and add:
+| Provider | How the automation is triggered | Extra setup |
+|---|---|---|
+| GitHub | GitHub Actions supports Issue and comment events natively | None |
+| GitLab | Pipelines do not start on Issue activity, so a project webhook bridges the gap | A project webhook and a pipeline trigger token |
+| Gitea | Gitea Actions supports Issue and comment events natively | Actions enabled on the instance and the repository, and a registered act runner |
 
-- `JIFFY_INGEST_TOKEN` — the value of `GITEA_INGEST_TOKEN` from your Gateway's `.env`
-- `JIFFY_GATEWAY_URL` — for example `https://gateway.example.com/api/gitea/ingestion`
+## Per-provider setup
 
-Make sure Actions are enabled for the repository and that a runner is registered and online — a Gitea repository with Actions disabled silently never runs the workflow.
-</Step>
+Follow the section for the provider you are connecting. Each one covers the provider itself, the automation setup, how Issues register a task, and the full environment configuration.
 
-<Step>
-### Add the workflow
-
-Gitea Actions use the same workflow syntax as GitHub Actions:
-
-```yaml title=".gitea/workflows/jiffy.yml"
-name: Jiffy Edge Component
-
-on:
-  issues:
-    types: [opened, edited]
-  issue_comment:
-    types: [created, edited]
-
-jobs:
-  forward:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Detect mention and forward the Issue thread
-        env:
-          JIFFY_INGEST_TOKEN: ${{ secrets.JIFFY_INGEST_TOKEN }}
-          JIFFY_GATEWAY_URL: ${{ secrets.JIFFY_GATEWAY_URL }}
-        run: |
-          # Exit early unless the event body contains a valid @jiffy mention,
-          # then collect the full Issue thread and POST it to the Gateway with:
-          #   X-JIFFY-TOKEN: $JIFFY_INGEST_TOKEN
-```
-</Step>
-</Steps>
+<Cards>
+  <Card title="GitHub" href="/docs/submodules/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and the GitHub ingestion route" />
+  <Card title="GitLab" href="/docs/submodules/edge-component/providers/gitlab" description="The webhook bridge, pipeline trigger tokens, project variables, and the GitLab ingestion route" />
+  <Card title="Gitea" href="/docs/submodules/edge-component/providers/gitea" description="Act runners, instance and repository requirements, and the Gitea ingestion route" />
+</Cards>
 
 ## Rotating an ingestion secret
 
-Because each provider's secret is independent, rotating one never affects the others:
+The procedure is the same on every provider, and because the secrets are independent, rotating one never affects the others:
 
-1. Generate a new value and set it on the Gateway for that provider only.
-2. Update `JIFFY_INGEST_TOKEN` in every repository whose Edge Component uses that provider.
-3. Restart the Gateway so it picks up the new value.
+1. Generate a new value and set it on the Gateway for that provider only, then restart the Gateway.
+2. Update the stored secret in every repository or project whose Edge Component uses that provider.
+3. Trigger a test mention on one of them to confirm the new value is accepted.
 
-Until step 2 is complete on a given repository, that repository's Edge Component receives an authentication failure from the Gateway — see [Troubleshooting](/docs/submodules/edge-component/introduction/troubleshooting).
+Between steps 1 and 2, a repository still holding the old value receives an authentication failure from the Gateway — see [Troubleshooting](/docs/submodules/edge-component/introduction/troubleshooting).
