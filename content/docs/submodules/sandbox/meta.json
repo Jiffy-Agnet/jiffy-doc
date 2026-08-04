@@ -1,5 +1,5 @@
 {
   "title": "Sandbox",
   "icon": "Shield",
-  "pages": ["index"]
+  "pages": ["index", "introduction"]
 }

@@ -1,0 +1,67 @@
+---
+title: Overview
+description: What the sandbox is — the isolated, disposable Docker container the Gateway starts for a single task, and why every task gets one of its own.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The sandbox is the isolated Docker container the Gateway starts for one task and destroys when that task ends. It is where the Agent runs, where your repository is cloned, and where every command the Agent decides to run actually executes.
+
+It is worth being precise about what that means. Jiffy hands a model-driven agent a repository and lets it install dependencies, run build tooling, and execute the project's own test suite. That is exactly what makes Jiffy useful, and it is also why none of it can be allowed to happen on the machine running the Gateway. The sandbox is the boundary that makes the useful part safe.
+
+## Where it sits in the pipeline
+
+```
+ ┌───────────────────┐                    ┌──────────────────────────────────┐
+ │      Gateway      │  starts one        │             Sandbox              │
+ │  Django + Celery  │  container         │  Debian container, non-root user │
+ │                   │ ─────────────────▶ │  memory limit + pinned processor │
+ │  clones the       │                    │  egress restricted to allowlist  │
+ │  repository in    │                    │  ┌────────────────────────────┐  │
+ │  hands the Agent  │                    │  │  /workspace                │  │
+ │  its instructions │                    │  │  your repository, cloned   │  │
+ │                   │                    │  │  the Agent works here      │  │
+ │  tears it down    │                    │  └────────────────────────────┘  │
+ └───────────────────┘                    └──────────────────────────────────┘
+```
+
+## One container per task
+
+Every task gets a brand new container, and that container never serves a second task. This is a stronger guarantee than it might first appear, and it buys several things at once:
+
+| Property | Why it matters |
+|---|---|
+| A clean starting state | No leftover dependencies, no half-applied configuration, no stale build cache from an unrelated repository |
+| No cross-task leakage | The repository access token, the callback secret, and the checked-out source of one task are simply not present when the next one runs |
+| Free cleanup | Nothing needs to be reset, uninstalled, or reverted — the container is discarded whole |
+| Honest failure | A task that corrupts its own environment corrupts only its own environment |
+
+The container is torn down whether the task succeeded or failed. What survives is exactly what the Agent pushed to your git provider and what it reported back.
+
+<Callout type="info">
+Because the container is destroyed at the end, nothing inside it can be inspected after the fact. When you expect to need that, the Gateway's cleanup behavior can be turned off deliberately — see [Configuration](/docs/submodules/sandbox/introduction/configuration).
+</Callout>
+
+## One generic image, not one per language
+
+There is a single sandbox image, and it is deliberately generic. It ships version managers rather than pinned language versions, so the Agent installs the specific runtime a repository asks for at task time. One image serves a Python repository, a Node.js repository, and a Go repository without anyone maintaining three of them.
+
+The image is a Debian base carrying:
+
+- Version managers for Node.js, Python, and Go, along with a working default installation of each.
+- The command-line tools for GitHub, GitLab, and Gitea, so the Agent can push branches and open Pull Requests.
+- `git`, `curl`, and a full build toolchain, so native dependencies compile.
+- The firewall tooling used to enforce the egress restriction.
+- The OpenCode agent itself.
+
+## What the sandbox is not
+
+- **It is not a persistent environment.** There is nothing to keep warm between tasks and nothing to migrate when the image changes.
+- **It is not a virtual machine.** Isolation comes from the container boundary, its resource limits, and its egress restriction — not from a hypervisor.
+- **It is not something you interact with directly.** The Gateway starts it, the Agent works inside it, and it disappears. Configuring it means configuring the Gateway.
+
+## Read next
+
+- [Role](/docs/submodules/sandbox/introduction/role) — the tooling it provides, and the isolation it actually enforces.
+- [Configuration](/docs/submodules/sandbox/introduction/configuration) — the image tag, resource limits, cleanup, and the network allowlist.
+- [Troubleshooting](/docs/submodules/sandbox/introduction/troubleshooting) — image problems, a blocked registry, and resource limit failures.
