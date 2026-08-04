@@ -22,15 +22,23 @@
     "edge-component/providers",
     "edge-component/troubleshooting",
 
+    "---Gateway---",
+    "gateway/index",
+    "gateway/role",
+    "gateway/configuration",
+    "gateway/troubleshooting",
 
-    "---AI Agent---",
+    "---Code Agent---",
     "agent/index",
     "agent/role",
     "agent/configuration",
     "agent/troubleshooting",
 
     "---Sandbox---",
-    "sandbox",
+    "sandbox/index",
+    "sandbox/role",
+    "sandbox/configuration",
+    "sandbox/troubleshooting",
 
     "---Deployment---",
     "deployment",

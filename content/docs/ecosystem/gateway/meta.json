@@ -1,5 +1,5 @@
 {
   "title": "Gateway",
   "icon": "Server",
-  "pages": ["index", "introduction"]
+  "pages": ["index", "role", "configuration", "troubleshooting"]
 }
