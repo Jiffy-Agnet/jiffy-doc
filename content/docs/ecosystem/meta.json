@@ -4,7 +4,7 @@
   "icon": "Globe",
   "pages": [
     "---Introduction---",
-    "welcome",
+    "index",
     "architecture",
     "features",
     "comparison",
