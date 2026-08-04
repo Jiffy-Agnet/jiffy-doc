@@ -10,27 +10,7 @@ Jiffy is split into a small number of pieces, each with exactly one responsibili
 
 ## The pipeline
 
-```
-                 ┌────────────────────┐
- @jiffy mention  │   Edge Component   │   filtered payload    ┌───────────────────────┐
- on an Issue ───▶│ (GitHub/GitLab/    │───────────────────────▶│        Gateway        │
-   or comment    │  Gitea, per-repo)  │  X-JIFFY-TOKEN header  │ Django + Celery+Redis │
-                 └────────────────────┘                        └───────────┬───────────┘
-                                                                            │ queues task
-                                                                            ▼
-                 ┌────────────────────┐                        ┌───────────────────────┐
-                 │   Issue comment    │   summary + PR link    │        Sandbox        │
-                 │ (report + PR link) │◀───────────────────────│  isolated Docker      │
-                 └────────────────────┘                        │  container running    │
-                                                                │  the OpenCode agent   │
-                                                                └───────────┬───────────┘
-                                                                            │ commit, push,
-                                                                            ▼ open PR
-                                                                ┌───────────────────────┐
-                                                                │   Pull Request on     │
-                                                                │  your git provider    │
-                                                                └───────────────────────┘
-```
+![Hello](assets/system-arch.png)
 
 ## Stage by stage
 
