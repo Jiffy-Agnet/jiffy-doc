@@ -1,0 +1,109 @@
+---
+title: Configuration
+description: The environment variables that control the Gateway — per-provider ingestion secrets, the sandbox image and its resource limits, cleanup behavior, the network allowlist, and the Docker connection.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The Gateway is configured entirely through environment variables, read once at startup from the process environment or from a `.env` file next to the project. There is no configuration stored in the database and nothing to configure per repository — a repository becomes a Jiffy repository by installing the Edge Component, not by registering it here.
+
+The variables fall into five groups.
+
+## Ingestion secrets
+
+Each provider route has its own secret, and they are never shared.
+
+| Variable | Route it protects |
+|---|---|
+| `GITHUB_INGEST_TOKEN` | `POST /api/github/ingestion` |
+| `GITLAB_INGEST_TOKEN` | `POST /api/gitlab/ingestion` |
+| `GITEA_INGEST_TOKEN` | `POST /api/gitea/ingestion` |
+
+A route whose secret is unset rejects every request, including requests that send no token at all. That is the intended behavior: a provider you have not configured is a provider that cannot submit work.
+
+<Callout type="warn">
+Generate these as long random values, one per provider, and rotate them on both sides at the same time. Rotating on the Gateway alone means every repository using that provider starts receiving `401 Unauthorized` until its stored secret is updated too.
+</Callout>
+
+## The sandbox image and its resource limits
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `SANDBOX_IMAGE` | `jiffy-sandbox:1.2.0` | The image tag every task's container is started from. If the tag is not present locally, the Gateway builds it from the sandbox Dockerfile in the repository and tags it |
+| `SANDBOX_MEM_LIMIT` | `1g` | The memory ceiling applied to each sandbox container |
+| `SANDBOX_CPU_LIMIT` | `1` | Passed through as the container's processor set, so it selects *which* processors the container may use, not how many shares it gets |
+| `SANDBOX_OPENCODE_CONFIG_PATH` | *(unset)* | Location of the OpenCode configuration for the Agent |
+
+The image is checked twice — once when a worker becomes ready and once again immediately before each task's container is provisioned — so an image removed between those two moments is rebuilt rather than causing a confusing failure.
+
+<Callout type="info">
+Raising `SANDBOX_MEM_LIMIT` is the first thing to try for repositories with heavy dependency installations. A one gigabyte ceiling is comfortable for most work but is genuinely tight for large front-end dependency trees.
+</Callout>
+
+## Cleanup behavior
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SANDBOX_CLEANUP` | `true` | Whether the sandbox container is stopped and removed after each task |
+
+Set this to `false` and containers are left running after their task ends, which lets you attach to one and inspect exactly what the Agent left behind. That is genuinely the fastest way to diagnose a stubborn task.
+
+<Callout type="warn">
+This is a debugging setting, not a production one. With cleanup disabled, every task leaves a container behind permanently — including the memory reserved by its limit. Turn it back on when you are done.
+</Callout>
+
+## The network allowlist
+
+Sandbox containers are restricted by default: outbound connections are limited to a list of hostnames, enforced with firewall rules applied inside the container's own network namespace.
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SANDBOX_NETWORK_RESTRICTED` | `true` | Set to `false` to disable the restriction entirely and give the sandbox open egress |
+| `SANDBOX_NETWORK_ALLOWLIST` | The built-in list below | A comma-separated list of hostnames. Setting this **replaces** the built-in list |
+| `SANDBOX_NETWORK_ALLOWLIST_EXTRA` | *(unset)* | A comma-separated list of hostnames **appended** to whichever list is in effect |
+
+The built-in list covers the common package registries and the hosted git providers:
+
+```
+pypi.org, files.pythonhosted.org, registry.npmjs.org,
+crates.io, static.crates.io, proxy.golang.org, sum.golang.org,
+github.com, api.github.com, objects.githubusercontent.com,
+codeload.github.com, gitlab.com, gitea.com
+```
+
+The two list variables exist because they solve different problems. Use `SANDBOX_NETWORK_ALLOWLIST_EXTRA` for the things that vary per installation and simply cannot be shipped as defaults — your self-hosted git server, and the endpoint your model provider lives behind. Use `SANDBOX_NETWORK_ALLOWLIST` only when you deliberately want to narrow the world down to your own mirrors.
+
+<Callout type="warn">
+A self-hosted git server almost always needs an entry in `SANDBOX_NETWORK_ALLOWLIST_EXTRA`. Without it the restriction is applied successfully, the container starts fine, and then the clone fails — which looks nothing like a networking problem until you know to look for it.
+</Callout>
+
+Both lists are merged, lowercased, and deduplicated before use, and the effective list is logged at the start of every run alongside whether restriction was active at all.
+
+## The Docker connection
+
+The worker manages sandbox containers through the Docker engine, and how it reaches that engine depends on where the worker itself runs.
+
+| Variable | When you need it |
+|---|---|
+| `DOCKER_HOST` | **Required** when the worker runs inside a container. Point it at the socket proxy, for example `tcp://docker-socket-proxy:2375` |
+
+Running the worker directly on the host, this can be left unset — the Docker library finds the default socket on its own. The Gateway checks this up front: if the variable is unset *and* the default socket is unreachable, it raises an explicit error naming the variable rather than letting the connection fail mysteriously later.
+
+Every Docker client the Gateway creates carries a request timeout of at least **fifteen minutes**, and the client's timeout is raised again for the Agent run itself — up to one hour by default. This matters more than it looks: the command that runs the Agent blocks on one long request for its whole duration, so the client timeout is what actually decides how long a task is allowed to take before Docker cuts it off.
+
+## Supporting services
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Where the Issue locks and the task payloads live |
+| `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/1` | The queue the worker consumes from |
+| `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/2` | Where Celery stores task results |
+| `SECRET_KEY` | An insecure development value | Must be set to a real random value in any deployment |
+| `DEBUG` | `False` | Leave off outside local development |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames the Gateway will answer for |
+
+Three separate Redis databases are used on purpose: the locks and payloads, the queue, and the results each have very different lifetimes and clearing one should never disturb the others.
+
+<Callout type="info">
+Task records live in a SQLite file under the project's data directory. That is a deliberate choice for a component that writes a handful of rows per task — but it does mean the data directory is the one thing worth putting on durable storage.
+</Callout>
