@@ -1,0 +1,74 @@
+---
+title: Role
+description: How the Edge Component detects an @jiffy mention, collects the full Issue thread, and forwards it to the Gateway's per-provider ingestion routes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+The Edge Component has three responsibilities, performed in order, and nothing else.
+
+<Steps>
+<Step>
+### Detect the mention
+
+Every new Issue and every new Issue comment triggers the Edge Component. Its first action is to check whether the body contains a valid `@jiffy` mention.
+
+If there is no valid mention, the Edge Component exits immediately. No request is made, no secret is transmitted, and the Gateway never learns that the event happened. This is what keeps normal repository traffic — the overwhelming majority of Issue activity — from ever reaching Jiffy's infrastructure.
+</Step>
+
+<Step>
+### Collect the full Issue thread
+
+A mention rarely carries enough context on its own. The instruction may be in the latest comment while the actual requirement, the reproduction steps, or the rejected earlier approach live further up the thread.
+
+So once a mention is confirmed, the Edge Component collects the **entire Issue thread** — the original Issue body plus every comment on it, in order — not just the single comment that contained the mention. That complete thread is what eventually reaches the Agent as the task's requirements.
+</Step>
+
+<Step>
+### Forward to the Gateway
+
+The collected thread is sent to the Gateway as a single payload over HTTPS, authenticated with the provider's ingestion secret in the `X-JIFFY-TOKEN` header.
+
+The Edge Component's job ends the moment the Gateway accepts the payload. It does not wait for the task to run, does not poll for progress, and does not post the result — the completion report comes back to the Issue thread through a separate path entirely.
+</Step>
+</Steps>
+
+## Authentication
+
+Every forwarded payload carries a single header:
+
+```http
+X-JIFFY-TOKEN: <the ingestion secret for this provider>
+```
+
+The Gateway validates this header against the secret configured for the route being called. Each provider has its own independently configured secret, and a secret is **never** shared across providers — the GitHub secret is only valid on the GitHub ingestion route, the GitLab secret only on the GitLab route, and the Gitea secret only on the Gitea route.
+
+<Callout type="warn">
+The ingestion secret authenticates the Edge Component to the Gateway. It is not the same thing as your git provider token, which is what the sandbox later uses to push a branch and open a Pull Request. Keep the two configured separately.
+</Callout>
+
+## Destination routes
+
+The Gateway exposes one ingestion route per provider. The Edge Component posts to exactly one of them — whichever matches the provider it is running on.
+
+| Provider | Method | Path |
+|---|---|---|
+| GitHub | `POST` | `/api/github/ingestion` |
+| GitLab | `POST` | `/api/gitlab/ingestion` |
+| Gitea | `POST` | `/api/gitea/ingestion` |
+
+Because the route itself identifies the provider, the Gateway can select the correct secret and the correct provider behavior without inspecting the payload first.
+
+## What the Gateway does with the payload
+
+Once a payload is authenticated, the Gateway checks whether a task is already in flight for that same Issue, using a lock held in Redis.
+
+- **New Issue** — the Gateway records the task and queues it for the next free Celery worker.
+- **Duplicate delivery for the same Issue** — the Gateway responds `202 Accepted` with the body `{"status": "already_queued"}` and does **not** queue a second task.
+
+Both outcomes are successful responses from the Edge Component's point of view. A duplicate delivery is not an error condition and requires no retry — see [Troubleshooting](/docs/submodules/edge-component/introduction/troubleshooting).
+
+<Callout type="info">
+Deduplication is owned entirely by the Gateway, not the Edge Component. The Edge Component is stateless by design and has no way to know whether an Issue already has a task running.
+</Callout>

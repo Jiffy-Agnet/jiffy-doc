@@ -1,0 +1,84 @@
+---
+title: Overview
+description: What Gitea is, how Gitea Actions run the Edge Component, and what part Gitea plays in the Jiffy pipeline.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Gitea is a lightweight git provider that you run yourself. It is not a hosted service — every Gitea instance is one someone installed and operates, which is the main practical difference from GitHub and, usually, from GitLab. Alongside repository hosting it provides an Issue tracker and **Gitea Actions**, an automation system that runs jobs on repository events.
+
+Gitea Actions deliberately mirrors GitHub Actions: the workflow file syntax is the same, and the trigger events have the same names. If you have already set up the GitHub Edge Component, most of what you know transfers directly.
+
+## What Gitea provides to Jiffy
+
+| Capability | What Jiffy uses it for |
+|---|---|
+| Issue tracker | Where a person mentions `@jiffy` to request work, and where the completion report is posted |
+| Gitea Actions | The runtime that executes the Edge Component when an Issue event occurs |
+| Repository secrets | Storage for the ingestion secret and the Gateway endpoint address |
+| Pull Requests | Where the Agent delivers its finished work for review |
+
+## How a Gitea task flows
+
+```
+  Issue or comment      ┌──────────────────────┐                     ┌───────────────────┐
+  mentioning @jiffy ──▶ │    Gitea Actions     │ ──────────────────▶ │      Gateway      │
+  on your repository    │  runs the Edge       │  POST               │  authenticates    │
+                        │  Component workflow  │  /api/gitea/        │  and queues       │
+                        │  on an act runner    │  ingestion          └───────────────────┘
+                        └──────────────────────┘  X-JIFFY-TOKEN
+```
+
+Like GitHub, Gitea triggers the workflow natively on Issue and comment events — no webhook bridge is needed. Unlike GitHub, nothing runs until you have provided the machine that runs it.
+
+## The one structural difference from the other providers
+
+This is the important thing to understand before setting Gitea up, and the source of nearly every Gitea-specific problem.
+
+**Gitea has no shared runners.** GitHub provides hosted runners and GitLab.com provides shared runners; a self-hosted Gitea instance provides neither. You must install and register an **act runner** yourself, and Actions must be enabled at both the instance level and the repository level.
+
+A Gitea repository with Actions disabled, or with no runner registered, does not report an error when an Issue event occurs. The workflow simply never runs, which looks identical to a mention that was never detected.
+
+<Callout type="info">
+📷 Screenshot placeholder — insert a screenshot here showing: the Gitea instance's Site Administration → Runners page with at least one act runner registered and shown as idle or online.
+</Callout>
+
+## The destination route
+
+The Edge Component running on Gitea posts to the Gateway's Gitea ingestion route, and only that route:
+
+| Method | Path |
+|---|---|
+| `POST` | `/api/gitea/ingestion` |
+
+The request carries the Gitea ingestion secret in the `X-JIFFY-TOKEN` header. That secret is valid on this route alone — it cannot be used against the GitHub or GitLab ingestion routes, and those secrets cannot be used here.
+
+## Two tokens, two purposes
+
+Gitea setups involve two distinct credentials, and confusing them is the most common configuration mistake:
+
+| Credential | Used by | Purpose |
+|---|---|---|
+| Ingestion secret | The Edge Component | Authenticates the workflow to your Gateway in the `X-JIFFY-TOKEN` header |
+| Git provider token | The Agent, inside the sandbox | Pushes the branch and opens the Pull Request on Gitea |
+
+The ingestion secret is stored on Gitea, in the repository. The git provider token is configured on the Gateway, not in the repository.
+
+## A note on network placement
+
+Gitea instances are frequently self-hosted on a private network, and so is the Gateway. When both live inside the same network, the Edge Component can reach the Gateway at an internal address, and neither service needs to be exposed publicly.
+
+This is the simplest and most private of the three provider setups. It is also the one where an address that works from your own machine may not work from the runner — the runner is what makes the request, so the address must resolve from wherever the runner is installed.
+
+<Callout type="warn">
+Even on a private network, use encrypted transport between the runner and the Gateway. The ingestion secret travels in a request header, and an internal network is not by itself a reason to send it unencrypted.
+</Callout>
+
+## Read next
+
+<Cards>
+  <Card title="Setup Action" href="/docs/submodules/edge-component/providers/gitea/setup-action" description="Enable Actions, register a runner, and create the workflow that forwards the thread" />
+  <Card title="Issue Registration" href="/docs/submodules/edge-component/providers/gitea/issue-registration" description="How Issues are tracked and how the @jiffy mention is picked up and validated" />
+  <Card title="Environment Setup" href="/docs/submodules/edge-component/providers/gitea/environment-setup" description="Repository secrets, instance-level requirements, and verification" />
+</Cards>
