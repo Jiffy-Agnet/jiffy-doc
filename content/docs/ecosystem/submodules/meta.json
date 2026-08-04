@@ -1,5 +1,5 @@
 {
-  "root": true,
+  "root": false,
   "title": "Submodules",
   "icon": "Blocks",
   "pages": ["edge-component", "gateway", "agent", "sandbox"]

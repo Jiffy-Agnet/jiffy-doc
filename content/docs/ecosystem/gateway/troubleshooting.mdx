@@ -1,0 +1,101 @@
+---
+title: Troubleshooting
+description: Diagnosing Gateway problems — reading a task's status to find the stage that failed, sandbox provisioning failures, and callbacks that never arrive.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The Gateway is unusually easy to diagnose, because a task's status is an honest record of exactly how far it got. Read the status first; it tells you which stage to look at and lets you skip the other five entirely.
+
+## Quick reference
+
+| Status the task is stuck at | What completed | What to look at |
+|---|---|---|
+| `queued` | Ingestion. Nothing else | Is a Celery worker running and consuming the execute queue? |
+| `provisioning` | Payload load and the image check | The Docker connection, the image build, the egress rules |
+| `cloning` | The container started | The repository access token, and whether the git host is on the allowlist |
+| `running` | The Agent was handed its instructions | The Agent's own logs — this is normal for a long time |
+| `failed` | Nothing further will happen | The `error_message` on the task row, and the worker log for that task |
+| `done`, but no comment appeared | Everything, except delivery | The callback address and the provider token's comment permission |
+
+Every worker log line for a task is prefixed with `[task_id]`, or `[task_id|provider]`, which makes following one task through a busy log a single search.
+
+## Stuck at `queued`
+
+This status means ingestion worked perfectly. The token was accepted, the payload validated, the lock was taken, the row was written, and the Celery task was dispatched. What has not happened is a worker picking it up.
+
+Work through, in order:
+
+- **No worker is running,** or it is running but not consuming the `execute` queue. Tasks are routed there explicitly, so a worker consuming only the default queue looks healthy and still ignores every Jiffy task.
+- **The worker cannot reach the broker.** Check `CELERY_BROKER_URL`, and remember that a value pointing at `127.0.0.1` is wrong for a worker running inside a container.
+- **The worker started before the task was dispatched and has been idle since.** Restarting the worker resolves this on its own: at startup it looks for tasks still sitting at `queued` and dispatches them again.
+
+<Callout type="warn">
+The four hour lifetime on the stored payload is the real deadline here. A task left at `queued` past that point will be picked up eventually and then fail immediately, because the payload it needs is gone. There is no way to recover it — the Issue has to be mentioned again.
+</Callout>
+
+## Stuck or failing at `provisioning`
+
+Provisioning covers three distinct things, and the worker log distinguishes them clearly.
+
+**The Docker connection.** If the error names `DOCKER_HOST` and mentions the socket proxy, the worker cannot reach the Docker engine at all. Inside a container this variable is required; the Gateway checks for it up front rather than letting a confusing connection error appear later. Outside a container, it can be unset only when the default socket is genuinely reachable by the user the worker runs as.
+
+**The image build.** If `SANDBOX_IMAGE` is not present locally, the Gateway builds it before proceeding. A first run on a fresh host therefore spends several minutes here quite legitimately, and the log says so with the elapsed time. A build that *fails* almost always fails for one of two reasons: the build host cannot reach the sources the image pulls its tooling from, or the disk is full. Building the image by hand on that host reproduces the error with far better output than the worker log gives you.
+
+**The egress rules.** This is the failure worth recognizing on sight, because the message is specific: applying the sandbox network restriction returned a non-zero exit code. The container started, but the firewall rules could not be installed inside it, so the Gateway tore the container down and failed the task.
+
+<Callout type="info">
+This is deliberate, and it is the right behavior. The alternative would be a sandbox running your model-driven Agent with completely open network access because a rule failed to apply. The Gateway fails closed instead.
+</Callout>
+
+The usual cause is that the container was not granted the network administration capability, which in practice means the Docker socket proxy is configured too restrictively to allow it. To confirm the diagnosis quickly — not as a fix — set `JIFFY_SANDBOX_NETWORK_RESTRICTED` to `false` and re-run. If the task then provisions cleanly, the restriction step is the problem, and the fix belongs in the proxy configuration rather than in leaving the restriction off.
+
+## Failing at `cloning`
+
+The container is up and healthy; the clone is what failed. Two causes account for nearly all of these.
+
+**The repository access token.** It arrived with the payload from the Edge Component, and it needs read access to the repository. On GitLab and Gitea it also needs the username alongside it — those providers require a username and token pair in the clone address, where GitHub accepts the token alone. A missing username shows up here as an authentication failure that looks, misleadingly, like a bad token.
+
+**The git host is not on the allowlist.** A self-hosted git server is not in the built-in list and cannot be, so unless it has been added to `SANDBOX_NETWORK_ALLOWLIST_EXTRA`, the clone is blocked by the very restriction that was just applied successfully. The provisioning step reports no problem at all, which is what makes this one worth checking early.
+
+There is a third, rarer cause: the clone succeeds and then the fetch or checkout of `develop` fails, because the repository has no `develop` branch. The Gateway lands the working tree on `develop` deliberately rather than trusting the remote's default, so a repository organized around a different branch name fails here.
+
+## Sitting at `running` for a long time
+
+This is usually not a problem. `running` is where nearly all of a task's wall clock time is spent — the Agent is installing runtimes, reading the repository, making changes, and running tests.
+
+The upper bound is set by the Docker client's request timeout, which is raised to one hour for the Agent run. Past that, Docker aborts the call and the task fails.
+
+If you need to see what is actually happening, the Agent's output is redirected to the container's main output stream, so the container's logs show it live. And if you expect to be debugging repeatedly, setting `JIFFY_SANDBOX_CLEANUP` to `false` leaves the container in place afterwards so you can attach and look around properly.
+
+## The task is `done` but no comment appeared
+
+Delivery is the one part of the pipeline that can fail after everything else succeeded, and it is worth understanding why the branch and the Pull Request being present is a good sign rather than a confusing one.
+
+The Agent makes the first delivery attempt from inside the sandbox and records whether it worked. If it did not, the Gateway sends the report itself, retrying up to **three times** with two seconds between attempts. A missing comment therefore means the Agent's attempt failed *and* all three of the Gateway's attempts failed.
+
+When every attempt fails, the cause is almost always one of these:
+
+- **The token cannot write comments.** It could clone, push, and open a Pull Request, but commenting is a separate permission on every provider. This produces exactly the observed symptom — complete work, no comment — and no number of retries changes it.
+- **The Issue was closed, locked, or deleted while the task ran.** Every attempt is rejected identically.
+- **The provider was unreachable or rate limiting for the whole retry window.** Three attempts two seconds apart cover a blip, not an outage.
+- **The callback secret was rotated mid-task.** The pair is issued with the task and is not refreshed.
+- **The provider is not one the Gateway knows.** An unrecognized provider value means no callback specification can be built, and the Gateway logs that it cannot construct the request at all rather than attempting it.
+
+<Callout type="info">
+The exhaustion is logged explicitly, naming the task, the callback address, and the status it was trying to report. That line is the fastest confirmation that delivery — rather than execution — is what failed.
+</Callout>
+
+The work itself is never lost in this situation. The branch and the Pull Request are already on your provider; only the notification did not arrive. Finding the Pull Request by its branch name recovers everything except the summary text.
+
+## A failure that cannot report itself
+
+There is one genuinely opaque case. When a task fails, the failure is reported through the same callback path a success uses — so if the callback channel itself is what is broken, the failure report cannot be delivered either.
+
+An Issue that goes completely silent after a mention was accepted is this case. The worker log is then the only complete record of what happened, and it is authoritative: every stage transition, the reason for the failure, and every callback attempt are all there under that task's identifier.
+
+## Re-running a task
+
+Mentioning Jiffy again on the same Issue starts a new task, as long as the Issue lock has expired — it releases itself five minutes after it was taken. Within that window, a second delivery is answered with `202 Accepted` and `{"status": "already_queued"}` instead of starting a second task.
+
+Before re-running a task that failed partway through, clean up whatever it left behind. A branch pushed by the failed attempt will collide with the new one and cause the second attempt to fail at precisely the same step.

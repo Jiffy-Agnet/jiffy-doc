@@ -15,14 +15,32 @@
     "manual-installation",
     "uninstall",
 
-    "---Edge Component---",
+    "--- Edge Component---",
+    "edge-component/index",
+    "edge-component/role",
+    "edge-component/configuration",
+    "edge-component/providers",
+    "edge-component/troubleshooting",
 
-    "---AI Agent---",
+    "---Gateway---",
+    "gateway/index",
+    "gateway/role",
+    "gateway/configuration",
+    "gateway/troubleshooting",
+
+    "---Code Agent---",
+    "agent/index",
+    "agent/role",
+    "agent/configuration",
+    "agent/troubleshooting",
 
     "---Sandbox---",
+    "sandbox/index",
+    "sandbox/role",
+    "sandbox/configuration",
+    "sandbox/troubleshooting",
 
     "---Deployment---",
-
     "deployment",
 
     "---Best Practice---"

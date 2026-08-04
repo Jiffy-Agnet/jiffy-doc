@@ -1,0 +1,96 @@
+---
+title: Configuration
+description: The environment variables that control the sandbox — the image tag, memory and processor limits, cleanup behavior, and the network allowlist.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The sandbox has no configuration of its own. Everything about it is decided by the Gateway, using environment variables read when the Gateway starts, and applied when each container is created. There is nothing to configure per repository and nothing that persists between tasks.
+
+## The image
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `SANDBOX_IMAGE` | `jiffy-sandbox:1.2.0` | The image tag every sandbox container is started from |
+
+The Gateway checks for this tag locally before each task. If it is present, the check costs almost nothing. If it is missing, the Gateway builds it from the sandbox Dockerfile that ships with the Gateway repository and tags it with exactly that value — so a fresh host works without a separate build step, at the cost of several minutes on its first task.
+
+You can also build it yourself ahead of time using the build script in the Gateway repository, including against a registry target if you would rather distribute the image than rebuild it on every host.
+
+<Callout type="info">
+Change `SANDBOX_IMAGE` to a tag that does not exist locally and the Gateway will build the bundled Dockerfile and give it that name — which is very likely not what you meant. To use a genuinely different image, make sure it is present on the host first.
+</Callout>
+
+## Resource limits
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `SANDBOX_MEM_LIMIT` | `1g` | The memory ceiling for each sandbox container |
+| `SANDBOX_CPU_LIMIT` | `1` | The container's processor set |
+
+`SANDBOX_CPU_LIMIT` is passed through as a processor set, so it names *which* processors the container may use rather than allocating a share. The default confines each sandbox to a single processor. To give a sandbox more, name them as a set — `0-3` for four processors, or `0,2` for two specific ones.
+
+<Callout type="warn">
+Because it is a set rather than a count, `SANDBOX_CPU_LIMIT=4` does not mean four processors. It means processor number four, which will fail outright on a host that does not have one.
+</Callout>
+
+The memory ceiling is the limit most likely to need raising. One gigabyte is comfortable for most work and genuinely tight for large front-end dependency installations, which are also the case where exceeding it produces the most confusing symptom — see [Troubleshooting](/docs/submodules/sandbox/introduction/troubleshooting).
+
+## Cleanup
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SANDBOX_CLEANUP` | `true` | Whether the container is stopped and removed when the task ends |
+
+Set it to `false` and the container is left running after its task finishes, which is the only way to inspect what the Agent actually left behind — the working tree, the installed dependencies, the result file it wrote.
+
+<Callout type="warn">
+This is a debugging setting. With it disabled, every task leaves a container behind permanently, each holding its memory reservation. Turn it back on and remove what accumulated once you are finished.
+</Callout>
+
+## The network allowlist
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SANDBOX_NETWORK_RESTRICTED` | `true` | Set to `false` to disable the restriction entirely and give the sandbox open egress |
+| `SANDBOX_NETWORK_ALLOWLIST` | The built-in list below | Comma-separated hostnames. Setting this **replaces** the built-in list |
+| `SANDBOX_NETWORK_ALLOWLIST_EXTRA` | *(unset)* | Comma-separated hostnames **appended** to whichever list is in effect |
+
+The built-in list:
+
+```
+pypi.org, files.pythonhosted.org, registry.npmjs.org,
+crates.io, static.crates.io, proxy.golang.org, sum.golang.org,
+github.com, api.github.com, objects.githubusercontent.com,
+codeload.github.com, gitlab.com, gitea.com
+```
+
+The two list variables answer different needs, and picking the right one matters:
+
+**Reach for `SANDBOX_NETWORK_ALLOWLIST_EXTRA` almost always.** It is for the hosts that vary per installation and therefore cannot be shipped as defaults — your self-hosted git server, and the endpoint your model provider sits behind. It adds to the defaults rather than replacing them, so package installation keeps working.
+
+```bash
+SANDBOX_NETWORK_ALLOWLIST_EXTRA=git.example.com,llm.example.com
+```
+
+**Reach for `SANDBOX_NETWORK_ALLOWLIST` only when you mean to narrow things down.** It replaces the built-in list entirely, which is what you want if every dependency comes from your own mirrors and you would rather the public registries were not reachable at all.
+
+```bash
+SANDBOX_NETWORK_ALLOWLIST=git.example.com,pypi.example.com
+```
+
+Both lists are merged, lowercased, and deduplicated before use. The effective result is logged at the start of every run, and repeated in the container's own startup report.
+
+<Callout type="warn">
+Turning `JIFFY_SANDBOX_NETWORK_RESTRICTED` off gives a model-driven agent unrestricted outbound network access from a container holding your repository access token. It is a useful thing to do for five minutes while isolating a problem, and a poor thing to leave in place.
+</Callout>
+
+## The Agent's model configuration
+
+| Variable | What it controls |
+|---|---|
+| `SANDBOX_OPENCODE_CONFIG_PATH` | Where the Gateway reads the OpenCode configuration from |
+
+That configuration is written directly into each container at startup rather than mounted, which is what lets the Gateway's worker run inside a container itself. The image also carries a minimal placeholder configuration, so the container starts successfully even when no real one has been provided — the Agent simply will not have a model to work with.
+
+Whatever endpoint that configuration points at needs to be reachable from inside the sandbox. If it is not one of the built-in allowlisted hosts, add it to `SANDBOX_NETWORK_ALLOWLIST_EXTRA`.
