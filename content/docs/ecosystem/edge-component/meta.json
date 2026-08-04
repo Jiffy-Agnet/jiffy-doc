@@ -1,0 +1,11 @@
+{
+  "title": "Edge Component",
+  "icon": "Network",
+  "pages": [
+    "index",
+    "role",
+    "configuration",
+    "providers",
+    "troubleshooting"
+  ]
+}
