@@ -1,0 +1,68 @@
+---
+title: Overview
+description: What GitHub is, how GitHub Actions run the Edge Component, and what part GitHub plays in the Jiffy pipeline.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+GitHub is a hosted git provider. Alongside repository hosting it provides an Issue tracker and **GitHub Actions**, a built-in automation system that runs jobs on repository events. Jiffy uses all three: the repository holds the code, the Issue tracker is where a task is requested, and GitHub Actions is what runs the Edge Component.
+
+## What GitHub provides to Jiffy
+
+| Capability | What Jiffy uses it for |
+|---|---|
+| Issue tracker | Where a person mentions `@jiffy` to request work, and where the completion report is posted |
+| GitHub Actions | The runtime that executes the Edge Component when an Issue event occurs |
+| Repository secrets and variables | Storage for the ingestion secret and the Gateway endpoint address |
+| Pull Requests | Where the Agent delivers its finished work for review |
+
+## How a GitHub task flows
+
+```
+  Issue or comment      ┌──────────────────────┐                     ┌───────────────────┐
+  mentioning @jiffy ──▶ │    GitHub Actions    │ ──────────────────▶ │      Gateway      │
+  on your repository    │  runs the Edge       │  POST               │  authenticates    │
+                        │  Component workflow  │  /api/github/       │  and queues       │
+                        └──────────────────────┘  ingestion          └───────────────────┘
+                                                  X-JIFFY-TOKEN
+```
+
+On GitHub the workflow is triggered natively — GitHub Actions supports Issue and Issue comment events directly, so no relay or webhook forwarding is needed. This makes GitHub the most direct of the three providers to set up.
+
+<Callout type="info">
+📷 Screenshot placeholder — insert a screenshot here showing: the Actions tab of a repository with a completed "Jiffy Edge Component" workflow run listed, triggered by an issue_comment event.
+</Callout>
+
+## The destination route
+
+The Edge Component running on GitHub posts to the Gateway's GitHub ingestion route, and only that route:
+
+| Method | Path |
+|---|---|
+| `POST` | `/api/github/ingestion` |
+
+The request carries the GitHub ingestion secret in the `X-JIFFY-TOKEN` header. That secret is valid on this route alone — it cannot be used against the GitLab or Gitea ingestion routes, and the GitLab and Gitea secrets cannot be used here.
+
+## Two tokens, two purposes
+
+GitHub setups involve two distinct credentials, and confusing them is the most common configuration mistake:
+
+| Credential | Used by | Purpose |
+|---|---|---|
+| Ingestion secret | The Edge Component | Authenticates the workflow to your Gateway in the `X-JIFFY-TOKEN` header |
+| Git provider token | The Agent, inside the sandbox | Pushes the branch and opens the Pull Request on GitHub |
+
+The ingestion secret is stored on GitHub, in the repository. The git provider token is configured on the Gateway, not in the repository.
+
+<Callout type="warn">
+Do not use the automatically provided `GITHUB_TOKEN` from a workflow run as the git provider token. It expires when the run ends, while the Agent pushes and opens its Pull Request asynchronously, well after that.
+</Callout>
+
+## Read next
+
+<Cards>
+  <Card title="Setup Action" href="/docs/submodules/edge-component/providers/github/setup-action" description="Create the workflow file, its trigger events, and where it sends the request" />
+  <Card title="Issue Registration" href="/docs/submodules/edge-component/providers/github/issue-registration" description="How Issues are tracked and how the @jiffy mention is picked up and validated" />
+  <Card title="Environment Setup" href="/docs/submodules/edge-component/providers/github/environment-setup" description="Repository secrets and variables, permissions, and verification" />
+</Cards>

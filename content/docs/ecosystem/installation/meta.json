@@ -1,5 +1,0 @@
-{
-  "title": "Installation",
-  "icon": "Download",
-  "pages": ["index", "prerequisites", "quickstart", "manual-installation", "uninstall"]
-}

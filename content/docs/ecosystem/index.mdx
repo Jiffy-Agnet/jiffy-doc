@@ -1,14 +1,35 @@
 ---
-title: Overview
-description: Jiffy's Ecosystem docs — introduction, installation, and production deployment.
+title: Welcome to Jiffy
+description: What Jiffy is, the problem it solves, and who it's for.
 ---
 
+import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-The Ecosystem docs cover Jiffy end to end: what it is and how it's built, how to get it running, and how to deploy it in production.
+Jiffy is an open-source, **self-hosted autonomous software engineering platform**. Mention `@jiffy` on an Issue in your GitHub, GitLab, or Gitea repository, and Jiffy turns that request into a reviewed **Pull Request** — cloned, coded, committed, pushed, and opened — without anyone on your team touching a terminal.
+
+## The problem it solves
+
+Small, well-scoped engineering tasks — a bug fix, a missing test, a rate-limit tweak, a docs update — are exactly the kind of work that's easy to describe but tedious to context-switch into. Generic CI bots can run checks and linters, but they can't read an Issue thread and write the code. Hosted AI coding assistants can write the code, but they typically mean sending your source and your task descriptions to someone else's platform, and they run wherever that vendor decides to run them.
+
+Jiffy is built to close that gap **on your own infrastructure**: your code and your Issue threads never leave your network unless you configure them to, and the agent that writes the code runs in a Docker sandbox you control.
+
+<Callout type="info">
+Jiffy is designed for low request volumes — hundreds of tasks per day — not massive-scale load. Its job is to be a dependable, low-overhead way for a team to hand off clearly-scoped development work.
+</Callout>
+
+## Who it's for
+
+- **Teams that already work in Issues** — if your workflow is "describe the task in an Issue, review the PR," Jiffy slots in without changing how you work.
+- **Teams that need to keep code in-network** — Jiffy is fully self-hosted, so there's no third-party platform in the path between your Issue and your Pull Request.
+- **Teams on GitHub, GitLab, or Gitea** — Jiffy treats all three as first-class, interchangeable entry points into the same core pipeline.
+
+## What's in this section
 
 <Cards>
-  <Card title="Introduction" href="/docs/ecosystem/introduction" description="What Jiffy is, how it's architected, and how it compares to CI bots and hosted AI agents" />
-  <Card title="Installation" href="/docs/ecosystem/installation" description="Prerequisites, quick-start, manual setup, and uninstall" />
-  <Card title="Deployment" href="/docs/ecosystem/deployment" description="Hardened production self-hosting: prod Compose, reverse proxy, TLS, and security checklist" />
+  <Card title="System Architecture" href="/docs/ecosystem/introduction/architecture" description="How an @jiffy mention becomes a Pull Request, end to end" />
+  <Card title="Features" href="/docs/ecosystem/introduction/features" description="Multi-provider support, sandboxed execution, automated PR delivery, and more" />
+  <Card title="Comparison" href="/docs/ecosystem/introduction/comparison" description="How Jiffy differs from CI bots and hosted AI coding agents" />
 </Cards>
+
+When you're ready to try it, head to [Installation](/docs/ecosystem/installation).

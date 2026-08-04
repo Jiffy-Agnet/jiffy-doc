@@ -1,0 +1,5 @@
+{
+  "title": "GitHub",
+  "icon": "Github",
+  "pages": ["index", "setup-action", "issue-registration", "environment-setup"]
+}

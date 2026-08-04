@@ -1,0 +1,94 @@
+---
+title: Troubleshooting
+description: Diagnosing Edge Component problems — rejected authentication, malformed payloads, duplicate deliveries, and mentions that are never detected.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Almost every Edge Component problem falls into one of four categories. The fastest way to tell them apart is the status code the Gateway returned — and if there is no status code at all, the request was never sent, which is itself the diagnosis.
+
+## Quick reference
+
+| Symptom | Meaning | Where to fix it |
+|---|---|---|
+| `401` or `403` from the Gateway | The `X-JIFFY-TOKEN` header was missing, empty, or did not match the secret for that route | Edge Component secret, or Gateway configuration |
+| `400` from the Gateway | The payload was malformed or missing required fields | Edge Component payload construction |
+| `202 Accepted` with `{"status": "already_queued"}` | A duplicate delivery for an Issue that already has a task in flight | Nothing — this is expected behavior |
+| No request at all | The mention was never detected, or the workflow never ran | Edge Component trigger or mention detection |
+
+## Missing or invalid token (401 / 403)
+
+The Gateway rejects the request before doing anything else when the `X-JIFFY-TOKEN` header does not match the secret configured for the route being called.
+
+Common causes, in the order worth checking:
+
+- **The secret is not set at all.** The workflow runs, the header is sent empty, and the Gateway rejects it. Confirm that `JIFFY_INGEST_TOKEN` exists in the repository or project secrets and is exposed to the job that needs it.
+- **The wrong provider's secret is in use.** Secrets are never shared across providers. A GitHub Action configured with the GitLab secret is rejected even though the secret itself is perfectly valid — it is just not valid on `/api/github/ingestion`.
+- **The workflow posts to the wrong route.** Sending a GitHub payload to `/api/gitlab/ingestion` causes the Gateway to validate against the GitLab secret, which fails for the same reason.
+- **The secret was rotated on one side only.** After changing the value on the Gateway, every repository using that provider must be updated too.
+- **Whitespace in the stored value.** A trailing newline pasted into the secret field is a different string. Re-enter the value rather than editing it in place.
+
+<Callout type="warn">
+Never echo the token in workflow logs while debugging — including indirectly, by printing the whole request. Compare lengths or fingerprints instead of values.
+</Callout>
+
+## Malformed payload (400)
+
+A `400` response means authentication succeeded but the Gateway could not make sense of the body. The request reached the right place with the right secret, so the problem is in what the Edge Component sent, not in how it authenticated.
+
+Check for:
+
+- A required field missing from the payload, such as the repository identifier, the Issue identifier, or the thread content.
+- An empty or truncated thread — for example, the thread collection step failing silently and the workflow forwarding an empty body anyway.
+- A body that is not valid JavaScript Object Notation, usually caused by unescaped content from the Issue text being interpolated directly into a shell command.
+- A missing or incorrect `Content-Type` header on the request.
+
+Issue bodies routinely contain quotation marks, backticks, and fenced code blocks. Build the payload with a proper serializer rather than string concatenation in the shell.
+
+## Duplicate delivery (202 Accepted, already_queued)
+
+If the Gateway already has a task in flight for the same Issue, it responds:
+
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{"status": "already_queued"}
+```
+
+**This is not an error.** The Gateway holds a lock in Redis for each Issue with a task in progress, and a second delivery for that same Issue is acknowledged rather than queued a second time. It is exactly what prevents one Issue from producing two concurrent sandboxes, two branches, and two competing Pull Requests.
+
+You will see this response routinely when:
+
+- A comment is edited shortly after being posted, causing a second event for the same Issue.
+- The provider retries a webhook delivery it considers unacknowledged.
+- Someone mentions Jiffy again while the first task is still running.
+
+Treat `202 Accepted` as success in the Edge Component and do not retry it. Repeated retries against an already-locked Issue accomplish nothing.
+
+<Callout type="info">
+If a task really is stuck and a new one legitimately needs to run for the same Issue, the lock is released on the Gateway side, not by anything the Edge Component can do.
+</Callout>
+
+## Mention not detected
+
+If nothing at all appears in the Gateway logs, the request was never sent. Work outward from the workflow:
+
+<Callout type="info">
+Start by confirming the workflow ran at all. If there is no run recorded for the event, the problem is the trigger, not the mention detection.
+</Callout>
+
+**The workflow never ran:**
+
+- The trigger does not include comment events. Mentions posted as follow-up comments require the comment event, not just the Issue-opened event.
+- Actions are disabled for the repository, or no runner is registered and online — a common cause on self-hosted Gitea.
+- On GitLab, the project webhook is not configured to deliver Issue and comment events, so no pipeline is triggered.
+
+**The workflow ran but exited early:**
+
+- The mention is spelled differently from the configured mention. Mention matching is exact.
+- The mention appears inside a fenced code block or a quoted reply, where it is deliberately not treated as an instruction.
+- The event fired on something other than an Issue thread — for example a Pull Request review comment, which the Edge Component does not act on.
+- The event was an Issue label change or assignment, which carries no new body text to match against.
+
+Because the Edge Component exits silently by design when no mention is found, an early exit looks identical to a successful no-op in the run logs. Confirming the exact text of the comment against the configured mention is usually faster than reading the logs.

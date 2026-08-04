@@ -1,0 +1,102 @@
+---
+title: Environment Setup
+description: Configuring GitHub repository secrets and variables for the Edge Component — the X-JIFFY-TOKEN value, the Gateway endpoint address, permissions, and rotation.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Everything the Edge Component needs on GitHub is stored in the repository itself, under **Settings → Secrets and variables → Actions**. There are only two values, plus the permissions that let the workflow read the Issue thread.
+
+## What to configure
+
+| Name | Kind | Value | Sensitive |
+|---|---|---|---|
+| `JIFFY_INGEST_TOKEN` | Repository secret | The value of `GITHUB_INGEST_TOKEN` from your Gateway's `.env` file | Yes |
+| `JIFFY_GATEWAY_URL` | Repository variable | Your Gateway base address plus `/api/github/ingestion` | No |
+
+Secrets are write-only once saved — GitHub never displays the value again. Variables stay readable, which is why the Gateway address belongs there rather than in a secret.
+
+<Callout type="info">
+📷 Screenshot placeholder — insert a screenshot here showing: the Settings → Secrets and variables → Actions page with both tabs visible, JIFFY_INGEST_TOKEN under Repository secrets and JIFFY_GATEWAY_URL under Variables.
+</Callout>
+
+## The X-JIFFY-TOKEN value
+
+`JIFFY_INGEST_TOKEN` is the secret the workflow sends in the `X-JIFFY-TOKEN` header. The Gateway validates it against the secret configured for the GitHub ingestion route.
+
+Three properties matter:
+
+- **It is generated for you.** The Gateway's `install.sh` writes `GITHUB_INGEST_TOKEN` into `.env` on first run. You do not invent this value.
+- **It is per-provider.** The GitHub secret is valid on `/api/github/ingestion` only. It is never shared with the GitLab or Gitea routes, so a leaked GitHub secret cannot be used to submit tasks through another provider.
+- **It is not your GitHub token.** It authenticates the Edge Component to your Gateway. It grants no access to GitHub at all.
+
+<Callout type="warn">
+Anyone holding this value can submit tasks to your Gateway through the GitHub route. Never inline it in the workflow file, never print it in a workflow log, and never paste it into an Issue or a Pull Request description.
+</Callout>
+
+## The Gateway endpoint address
+
+`JIFFY_GATEWAY_URL` is the full address of the GitHub ingestion route:
+
+```text
+https://gateway.example.com/api/github/ingestion
+```
+
+Check three things:
+
+| Requirement | Why |
+|---|---|
+| Uses `https` | The ingestion secret travels in a request header and must not cross the network unencrypted |
+| Ends in `/api/github/ingestion` | Posting to another provider's path causes the Gateway to validate against that provider's secret, which fails |
+| Reachable from GitHub's runners | A Gateway on a private network is not reachable from GitHub-hosted runners. Either expose it publicly behind a reverse proxy with encryption, or use a self-hosted runner inside the same network |
+
+<Callout type="info">
+📷 Screenshot placeholder — insert a screenshot here showing: the JIFFY_GATEWAY_URL variable's edit dialog with the full ingestion address filled in.
+</Callout>
+
+## Workflow permissions
+
+The workflow needs to read the Issue thread it is forwarding. Declaring it in the workflow file is enough:
+
+```yaml
+permissions:
+  issues: read
+```
+
+If the repository or organization sets restrictive default permissions for Actions, confirm under **Settings → Actions → General → Workflow permissions** that workflows are permitted to read repository contents and Issues.
+
+<Callout type="info">
+📷 Screenshot placeholder — insert a screenshot here showing: the Settings → Actions → General page scrolled to the Workflow permissions section.
+</Callout>
+
+## What is not configured here
+
+The git provider token — the one that pushes the branch and opens the Pull Request — is **not** stored in the repository. It lives on the Gateway, because the push happens later, from inside the sandbox, long after the workflow run has ended.
+
+| Credential | Stored on | Used by |
+|---|---|---|
+| `JIFFY_INGEST_TOKEN` | GitHub, in the repository | The Edge Component |
+| Git provider token | The Gateway | The Agent, inside the sandbox |
+| `OPENROUTER_API_KEY` | The Gateway | The Agent's model backend |
+
+See the Ecosystem [Prerequisites](/docs/ecosystem/installation/prerequisites) page for the scopes the git provider token needs.
+
+## Rotating the ingestion secret
+
+Because each provider's secret is independent, rotating the GitHub one never affects GitLab or Gitea:
+
+1. Set a new value for `GITHUB_INGEST_TOKEN` on the Gateway and restart it.
+2. Update `JIFFY_INGEST_TOKEN` in **every** repository whose Edge Component targets GitHub.
+3. Trigger a test mention on one repository to confirm the new value is accepted.
+
+Between steps 1 and 2, a repository still holding the old value receives an authentication failure from the Gateway. Rotate during a quiet period if you have many repositories connected.
+
+## Verifying the configuration
+
+Open an Issue and post a comment mentioning `@jiffy`, then confirm all three:
+
+- The workflow run appears under the **Actions** tab and finishes successfully.
+- The Gateway logs a request on `/api/github/ingestion` and queues a task.
+- The completion report is posted back as a comment on the Issue.
+
+If the run succeeds but the Gateway rejected the request, the status code identifies the cause — see [Troubleshooting](/docs/submodules/edge-component/introduction/troubleshooting).

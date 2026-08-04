@@ -2,5 +2,29 @@
   "root": true,
   "title": "Ecosystem",
   "icon": "Globe",
-  "pages": ["index", "introduction", "installation", "deployment"]
+  "pages": [
+    "---Introduction---",
+    "index",
+    "architecture",
+    "features",
+    "comparison",
+
+    "---Installation---",
+    "prerequisites",
+    "quickstart",
+    "manual-installation",
+    "uninstall",
+
+    "---Edge Component---",
+
+    "---AI Agent---",
+
+    "---Sandbox---",
+
+    "---Deployment---",
+
+    "deployment",
+
+    "---Best Practice---"
+  ]
 }
