@@ -22,17 +22,20 @@
 
     "---Gateway---",
     "gateway/index",
-    "gateway/role",
+    "gateway/request-lifecycle",
+    "gateway/execution",
     "gateway/configuration",
 
     "---Code Agent---",
     "agent/index",
-    "agent/role",
+    "agent/lifecycle",
+    "agent/callback",
     "agent/configuration",
 
     "---Sandbox---",
     "sandbox/index",
-    "sandbox/role",
+    "sandbox/lifecycle",
+    "sandbox/isolation",
     "sandbox/configuration",
 
     "---Troubleshooting---",
