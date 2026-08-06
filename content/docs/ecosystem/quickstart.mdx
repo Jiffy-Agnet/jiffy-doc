@@ -1,15 +1,15 @@
 ---
 title: Installation
-description: Get Jiffy running with the bundled installer script — a single, idempotent command that generates your .env and starts the stack.
+description: Get Jiffy running with a single one-line install command — installs missing dependencies, generates your .env, and starts the stack via Docker.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-The fastest way to get the Gateway running is the `install.sh` script bundled with the `jiffy_gateway` repository. It's a single, self-contained script: it generates your `.env` (including fresh per-provider ingestion secrets) if one doesn't already exist, then brings up the stack with Docker Compose.
+The fastest way to get the Gateway running is a single command — no cloning, no manual dependency installs. It checks for `git`, `curl`, Docker, and the Compose plugin (installing anything that's missing), fetches the Gateway source, generates your `.env` (including fresh per-provider ingestion secrets), and brings up the stack with Docker Compose.
 
-Make sure you've gone through [Prerequisites](/docs/ecosystem/installation/prerequisites) first — you'll need a git provider token and an `OPENROUTER_API_KEY` on hand.
+Make sure you've gone through [Prerequisites](/docs/ecosystem/installation/prerequisites) first — you'll need a git provider token for whichever provider(s) you plan to connect. Model access works out of the box, with no key required unless you want to swap in a specific provider.
 
 <Callout type="info">
 Prefer to see and control every step yourself? Follow [Manual Installation](/docs/ecosystem/installation/manual-installation) instead — it does the same thing without the script.
@@ -19,27 +19,26 @@ Prefer to see and control every step yourself? Follow [Manual Installation](/doc
 
 <Steps>
 <Step>
-### Clone the repository
+### Run the one-line installer
 
 ```bash
-git clone https://github.com/javadib/jiffy_gateway.git
-cd jiffy_gateway
+curl -fsSL https://raw.githubusercontent.com/Jiffy-Agnet/gateway/refs/heads/master/install.sh | bash
 ```
+
+This single command does everything:
+
+- Installs `git`, `curl`, Docker, and the Compose plugin if any are missing, using whichever package manager it finds (`apt`, `dnf`, `yum`, `pacman`, or `apk`)
+- Fetches the Gateway source into `~/jiffy-gateway` (or pulls the latest if it's already there)
+- Creates a `.env` file and auto-generates every secret it safely can — `SECRET_KEY`, `REDIS_PASSWORD`, and each provider's ingest token
+- Builds and starts the stack with Docker Compose, then runs database migrations
+
+Every step checks the current state first, so the same command is also safe to re-run any time you want to update or restart the stack.
 </Step>
 
 <Step>
-### Run install.sh
+### If it pauses partway through
 
-```bash
-./install.sh
-```
-
-On a first run, the script generates a `.env` file with a random `SECRET_KEY`, fresh per-provider ingestion secrets (`GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, `GITEA_INGEST_TOKEN`), and a `REDIS_PASSWORD` — none of these are values you need to invent yourself. It then prompts for the values it can't generate on your behalf:
-
-- `OPENROUTER_API_KEY` — from [Prerequisites](/docs/ecosystem/installation/prerequisites)
-- Your git provider token(s) — used later when you configure each Edge Component
-
-Once `.env` is in place, the script pulls the required images and runs `docker compose up -d` to start the stack.
+If anything is left in `.env` that genuinely needs a value only you can provide — a real external credential the script has no way to guess — it stops, prints exactly which key(s) to fill in, and asks you to re-run the same command. There's no interactive prompt during the install itself, since prompts aren't reliable when a script is piped straight into `bash`.
 
 <Callout type="warn">
 `.env` contains secrets and is created outside version control. Never commit it, and never paste its values into a repository or an Issue.
@@ -47,17 +46,12 @@ Once `.env` is in place, the script pulls the required images and runs `docker c
 </Step>
 
 <Step>
-### Run it again any time
-
-`install.sh` is **idempotent** — running it again after `.env` already exists doesn't overwrite your secrets or regenerate tokens. It just re-applies the current configuration and restarts any stopped services, which makes it safe to use as your normal "start the stack" command too.
-</Step>
-
-<Step>
 ### Verify the Gateway is up
 
 ```bash
+cd ~/jiffy-gateway
 curl -f http://localhost:8000/
-docker compose logs -f celery
+docker compose -f compose.prod.yml logs -f celery
 ```
 
 The web container should respond on port `8000`, and the Celery worker should log that it connected to Redis and is listening on the `execute` queue.
@@ -70,7 +64,7 @@ The sandbox image is built automatically on your first task, through the Docker 
 
 ## Next steps
 
-1. **Connect a repository** — add an Edge Component (GitHub Action, GitLab relay, or Gitea Action) to the repo you want Jiffy to work on, using the ingestion secret `install.sh` generated for that provider.
+1. **Connect a repository** — add an Edge Component (GitHub Action, GitLab relay, or Gitea Action) to the repo you want Jiffy to work on, using the ingestion secret the installer generated for that provider.
 2. **Try your first task** — open an Issue and mention the bot, e.g. `@jiffy add a health-check endpoint`, then watch the thread for the branch, PR, and summary report.
 3. **Go to production** — when you're ready for a hardened, always-on deployment, follow [Deployment](/docs/ecosystem/deployment).
 
