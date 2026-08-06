@@ -1,0 +1,70 @@
+---
+title: Agent
+description: Diagnosing Agent problems — callback delivery failures and the Gateway's fallback retries, Pull Request creation failures, and how a failed task is reported back.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Because the Agent runs inside a container that is destroyed when the task ends, diagnosing it is mostly a matter of reading what it managed to send out before that happened — the Pull Request, the Issue comment, or the worker logs.
+
+## Quick reference
+
+| Symptom | Most likely cause | Where to look |
+|---|---|---|
+| Pull Request exists, no comment on the Issue | The completion callback failed and the Gateway's fallback retries also failed | Gateway worker logs; the task's `callback_url` |
+| Branch pushed, no Pull Request | Pull Request creation failed | Provider token permissions; whether a Pull Request already exists for the branch |
+| No branch and no Pull Request | The Agent failed during implementation | Gateway worker logs; the failure comment on the Issue |
+| Nothing at all happened | The task was never queued | This is upstream of the Agent — see [Edge Component](/docs/ecosystem/troubleshooting/edge-component) |
+
+## Callback delivery failures
+
+The Agent makes the first attempt at the completion callback itself, posting to the task's `callback_url` with the task's `callback_secret`. When that attempt does not succeed, the report is not lost: the Gateway's fallback takes over and retries, **up to 3 times**, using the same declarative per-provider callback specification.
+
+So a single failed attempt is invisible in practice — the comment still appears, just sent by the Gateway rather than by the sandbox. A missing comment means the Agent's attempt *and* all of the fallback retries failed.
+
+Common causes when every attempt fails:
+
+- **The provider token cannot comment.** The token can push and open a Pull Request, but lacks permission to write Issue comments. The task itself succeeds, so this shows up as a Pull Request with no accompanying comment.
+- **The Issue was closed, locked, or deleted mid-task.** The provider rejects comments on a locked thread, and every retry is rejected the same way.
+- **The provider was unreachable or rate limited for the whole retry window.** The retries are finite; a longer outage exhausts them.
+- **The `callback_secret` was rotated while the task was in flight.** The pair is issued with the task, so a rotation partway through invalidates it.
+
+<Callout type="info">
+Retries do not fix a permission problem. If the comment never appeared and the Pull Request did, check the provider token's Issue permissions before anything else — that is the single most common cause, and no number of retries changes the outcome.
+</Callout>
+
+When the callback fails entirely, the work is still safe. The branch and the Pull Request are already on your provider; only the notification was lost. Finding the Pull Request by branch name recovers everything except the summary text.
+
+## Pull Request creation failures
+
+The Agent creates the Pull Request through the provider's command-line tool — `gh`, `glab`, or `tea`. If the branch was pushed but no Pull Request appeared, the push succeeded and creation is what failed.
+
+Check, in order:
+
+- **Token permissions.** Pushing a branch and opening a Pull Request are separate permissions on every provider. A token with write access to contents but not to Pull Requests pushes successfully and then fails at creation.
+- **A Pull Request already exists for that branch.** Re-running a task against a branch that already has an open Pull Request fails rather than creating a duplicate.
+- **The target branch is protected in a way that forbids the Pull Request**, or the repository has Pull Requests disabled entirely.
+- **The branch name collides** with an existing branch that has diverged.
+- **The repository is a fork or a mirror** where Pull Requests are expected to target a different upstream than the one the task assumed.
+
+If the Pull Request could not be created, the branch is still pushed. Opening the Pull Request by hand from that branch preserves the Agent's work in full.
+
+## How a failed task is reported
+
+A task that fails is reported through the same path as one that succeeds — a comment posted back on the originating Issue thread, via the task's `callback_url`. The difference is the content, not the mechanism: instead of a summary and a Pull Request link, the comment describes what failed.
+
+<Callout type="warn">
+If the failure itself is a callback failure, the failure report cannot be delivered either — the broken channel is the one the report would travel on. When an Issue goes completely silent after a mention was accepted, the Gateway's worker logs are the authoritative record of what happened.
+</Callout>
+
+The sandbox is torn down whether the task succeeded or failed, so nothing can be inspected inside the container after the fact. What survives is:
+
+- Anything the Agent pushed before failing (a branch, possibly a Pull Request).
+- The comment on the Issue, if the callback got through.
+- The Gateway's worker logs, which are the only complete record.
+
+## Re-running a failed task
+
+Mentioning Jiffy again on the same Issue starts a new task, provided the previous one is no longer in flight — while a task is still running, the Gateway responds to a further delivery for that Issue with `202 Accepted` and `{"status": "already_queued"}` rather than starting a second one.
+
+Before re-running, clean up whatever the failed attempt left behind. A branch pushed by the failed task will otherwise collide with the new one, causing the second attempt to fail at exactly the same step.

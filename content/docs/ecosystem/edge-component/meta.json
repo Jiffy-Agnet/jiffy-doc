@@ -1,10 +1,5 @@
 {
   "title": "Edge Component",
   "icon": "Network",
-  "pages": [
-    "index",
-    "role",
-    "providers",
-    "troubleshooting"
-  ]
+  "pages": ["index", "role", "providers"]
 }
