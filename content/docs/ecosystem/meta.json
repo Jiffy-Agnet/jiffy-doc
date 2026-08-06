@@ -41,8 +41,6 @@
     "sandbox/troubleshooting",
 
     "---Deployment---",
-    "deployment",
-
-    "---Best Practice---"
+    "deployment"
   ]
 }
