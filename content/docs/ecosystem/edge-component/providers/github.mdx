@@ -139,6 +139,12 @@ GitHub only runs Issue-triggered workflows from the repository's default branch 
 
 The ingestion secret is per-provider and generated for you — it's the `GITHUB_INGEST_TOKEN` the Gateway's installer wrote into `.env`, never something you invent. It's only ever valid on `/api/github/ingestion`.
 
+## Rotating the ingestion secret
+
+Anyone holding `JIFFY_GITHUB_INGEST_TOKEN` can submit tasks to your Gateway through the GitHub route — never inline it in the workflow file, print it in a log, or paste it into an Issue or Pull Request.
+
+To rotate it: set a new value for `GITHUB_INGEST_TOKEN` on the Gateway and restart it, then update the `JIFFY_GITHUB_INGEST_TOKEN` secret in every repository connected via GitHub, and trigger a test mention to confirm. This never affects GitLab or Gitea — each provider's secret is independent. Between updating the Gateway and updating a given repository, that repository gets an authentication failure, so rotate during a quiet period if you have many repositories connected.
+
 ## Example: an Issue from mention to PR
 
 1. Someone opens an Issue, or comments on an existing one, with `@jiffy add a health-check endpoint that returns the service version`.

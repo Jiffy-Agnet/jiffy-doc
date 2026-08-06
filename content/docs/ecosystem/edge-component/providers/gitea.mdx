@@ -90,6 +90,12 @@ A complete working version of this workflow (issue and comment fetch, thread ass
 
 `GITEA_ACCESS_TOKEN` does double duty: it reads the Issue thread through the Gitea API, and it's the same token the Agent later uses to push the branch and open the Pull Request — which is exactly why it needs a long expiry rather than a short-lived one.
 
+## Rotating the ingestion secret
+
+Anyone holding `JIFFY_GITEA_INGEST_TOKEN` can submit tasks to your Gateway through the Gitea route — never inline it in the workflow file, print it in a log, or paste it into an Issue or Pull Request.
+
+To rotate it: set a new value for `GITEA_INGEST_TOKEN` on the Gateway and restart it, then update the `JIFFY_GITEA_INGEST_TOKEN` secret in every repository connected via Gitea, and trigger a test mention to confirm. This never affects GitHub or GitLab.
+
 ## Example: an Issue from mention to PR
 
 1. Someone opens an Issue, or comments on an existing one, with `@jiffy add a health-check endpoint that returns the service version`.
