@@ -41,8 +41,23 @@ The comparisons above are about categories of tooling. In practice, most teams a
 | Running several tasks at once | A worker pool picks up queued tasks, each in its own isolated container | Limited by how many Actions jobs your runners can run in parallel | Cloud agents can run in parallel, each in its own isolated workspace | Cloud tasks can run in parallel, each in its own isolated environment |
 | Cost model | Open-source; you pay only for your own infrastructure and whichever model you choose | Free action, but usage draws from your Anthropic usage budget | Open-source; usage-based cost from whichever model you bring | Requires a ChatGPT subscription plan |
 
+### Feature checklist
+
+The same comparison, as a flat checklist. A feature counts as supported (✅) only if it works the way described out of the box, without a third-party plugin or workaround the vendor doesn't officially support:
+
+| Feature | Jiffy | Claude Code | Kilo Code | Codex |
+|---|---|---|---|---|
+| GitHub Issues | ✅ | ✅ | ✅ | ✅ |
+| GitLab Issues | ✅ | ❌ | ✅ | ❌ |
+| Gitea Issues | ✅ | ❌ | ❌ | ❌ |
+| Whole pipeline self-hosted on your own infrastructure | ✅ | ❌ | ❌ | ❌ |
+| Model-agnostic — bring your own model or provider | ✅ | ❌ | ✅ | ❌ |
+| Open-source agent | ✅ | ❌ | ✅ | ✅ |
+| Task starts from an `@mention` in an Issue thread | ✅ | ✅ | ❌ | ❌ |
+| Opens the Pull Request itself | ✅ | ✅ | ✅ | ✅ |
+
 <Callout type="info">
-This space moves fast — treat the table as a snapshot rather than a permanent feature matrix, and check each product's own documentation for anything you're relying on.
+This space moves fast — treat both tables as a snapshot rather than a permanent feature matrix, and check each product's own documentation for anything you're relying on.
 </Callout>
 
 ## Where Jiffy fits
