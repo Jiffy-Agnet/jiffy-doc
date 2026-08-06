@@ -18,29 +18,27 @@
     "--- Edge Component---",
     "edge-component/index",
     "edge-component/role",
-    "edge-component/configuration",
     "edge-component/providers",
-    "edge-component/troubleshooting",
 
     "---Gateway---",
     "gateway/index",
-    "gateway/role",
     "gateway/configuration",
-    "gateway/troubleshooting",
 
     "---Code Agent---",
     "agent/index",
-    "agent/role",
     "agent/configuration",
-    "agent/troubleshooting",
 
     "---Sandbox---",
     "sandbox/index",
-    "sandbox/role",
     "sandbox/configuration",
-    "sandbox/troubleshooting",
 
     "---Deployment---",
-    "deployment"
+    "deployment",
+
+    "---Troubleshooting---",
+    "troubleshooting/edge-component",
+    "troubleshooting/gateway",
+    "troubleshooting/agent",
+    "troubleshooting/sandbox"
   ]
 }

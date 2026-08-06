@@ -1,9 +1,10 @@
 ---
-title: Overview
-description: What the Agent is — the OpenCode coding agent running inside Jiffy's isolated Docker sandbox — and where it sits in the pipeline.
+title: How It Works
+description: What the Agent is and does — the OpenCode coding agent that reads the Issue thread, implements the change, and pushes a Pull Request from inside the sandbox.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 The Agent is **OpenCode**, the coding agent that actually writes the change. It runs inside the isolated Docker sandbox that a Celery worker starts for a single task, against an isolated copy of the target repository.
 
@@ -55,8 +56,80 @@ No other component makes code changes. The Gateway queues and authenticates; the
 The Agent's completion callback goes directly to the originating provider's own comment interface, using a URL and secret pair supplied with the task — not to a fixed Gateway address. If that first attempt fails, the Gateway retries on the Agent's behalf.
 </Callout>
 
+## The in-sandbox lifecycle
+
+Once a Celery worker starts the sandbox, control passes to the Agent and stays there until the task is finished. The Gateway does not step in at any point during execution — it only becomes involved again if the Agent's own completion callback does not get through.
+
+<Steps>
+<Step>
+### Read the requirements
+
+The Agent's input is the full Issue thread that the Edge Component collected — the original Issue body plus every comment, in order. That thread is the task specification. Context that only exists further up the thread, such as a rejected earlier approach or a clarifying reply, is available to the Agent for exactly this reason.
+
+If the repository contains an `AGENTS.md` file, the Agent reads it as well, and follows the repository-specific instructions it contains.
+</Step>
+
+<Step>
+### Implement the change
+
+The Agent works against the isolated copy of the repository inside the sandbox. It reads existing files, writes new ones, and runs commands using the toolchains the sandbox image provides — the language runtime managers described in [Runtime & Callback](/docs/ecosystem/agent/configuration).
+
+Nothing here touches your real repository. The sandbox holds its own copy, and the only way anything leaves the container is the push in the next step.
+</Step>
+
+<Step>
+### Commit
+
+When the change is complete, the Agent commits it. Commit messages are generated from the task, and are subject to whatever commit conventions the repository documents for the Agent to follow.
+</Step>
+
+<Step>
+### Push a branch
+
+The Agent pushes the commit to a new branch on your git provider, using the provider's command-line tool and the provider token configured for the task. If the task did not specify a branch name, one is derived automatically from the task.
+
+This is the first moment anything produced inside the sandbox becomes visible outside it.
+</Step>
+
+<Step>
+### Open the Pull Request
+
+The Agent then opens a Pull Request from that branch, again through the provider's own command-line tool — `gh` for GitHub, `glab` for GitLab, `tea` for Gitea. The Pull Request is the Agent's deliverable. It is never merged automatically; review and merge stay with you.
+</Step>
+
+<Step>
+### Attempt the completion callback
+
+Finally, the Agent makes the **first attempt** at the completion callback: a summary of what it did, together with the link to the Pull Request, posted back to the originating Issue thread.
+
+It sends this to the task's `callback_url`, authenticated with the task's `callback_secret`. That URL and secret arrive with the task itself — the pair points directly at the originating provider's own comment interface, not at any fixed Gateway address.
+</Step>
+</Steps>
+
+## The callback, in detail
+
+The completion callback is the one part of the Agent's work that is deliberately not fixed infrastructure.
+
+| Property | Detail |
+|---|---|
+| Destination | The task's `callback_url` — the originating provider's own comment interface |
+| Supplied | Per task, alongside the requirements |
+| Authentication | The task's `callback_secret` |
+| Fixed Gateway route | None. There is no Gateway-owned route the Agent calls |
+| First attempt | Made by the Agent itself, from inside the sandbox |
+| If the first attempt fails | The Gateway's fallback takes over and retries, up to 3 times |
+
+Because the destination is supplied per task rather than hardcoded, the same Agent reports to GitHub, GitLab, or Gitea without knowing which one it is talking to — the per-provider details are carried in the declarative callback specification the Gateway holds.
+
+<Callout type="info">
+The Agent attempting the callback first is what keeps the common path short: on success the report is posted directly from the sandbox, and the Gateway never has to get involved after queuing the task.
+</Callout>
+
+## Where the Gateway takes over
+
+If the Agent's own attempt does not succeed, the Gateway's fallback path runs the callback on its behalf, retrying up to 3 times using the same per-provider callback specification. The user-visible outcome is identical — a comment on the originating Issue with the summary and the Pull Request link. Only the sender differs.
+
 ## Read next
 
-- [Role](/docs/submodules/agent/introduction/role) — the full in-sandbox lifecycle and the Agent's own callback attempt.
-- [Configuration](/docs/submodules/agent/introduction/configuration) — language runtime managers, provider command-line tools, and the per-task callback pair.
-- [Troubleshooting](/docs/submodules/agent/introduction/troubleshooting) — callback delivery failures, Pull Request creation failures, and how a failed task is reported.
+- [Runtime & Callback](/docs/ecosystem/agent/configuration) — language runtime managers, provider command-line tools, and the per-task callback pair.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/agent) — callback delivery failures, Pull Request creation failures, and how a failed task is reported.

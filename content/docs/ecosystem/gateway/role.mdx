@@ -1,5 +1,5 @@
 ---
-title: Role
+title: Request Lifecycle
 description: How the Gateway verifies and deduplicates a request, moves a task through its real lifecycle, provisions the sandbox, and falls back to delivering the callback itself.
 ---
 
@@ -91,7 +91,7 @@ The `Task` model defines seven statuses. Five of them are the ordinary path a he
 | `failed` | Anything went wrong, at any point | The reason is stored on the row in `error_message` |
 
 <Callout type="info">
-Because `reporting` is never assigned today, a task you observe is always sitting at `queued`, `provisioning`, `cloning`, `running`, `done`, or `failed`. Seeing which one tells you immediately which stage to investigate — see [Troubleshooting](/docs/submodules/gateway/introduction/troubleshooting).
+Because `reporting` is never assigned today, a task you observe is always sitting at `queued`, `provisioning`, `cloning`, `running`, `done`, or `failed`. Seeing which one tells you immediately which stage to investigate — see [Diagnosing by Status](/docs/ecosystem/gateway/troubleshooting).
 </Callout>
 
 ## Half two: provisioning and execution

@@ -42,10 +42,17 @@ Each provider gets its own independently configured ingestion secret. A secret i
 ## Read next
 
 - [Role](/docs/ecosystem/edge-component/role) — mention detection, thread collection, and the three Gateway ingestion routes it posts to.
-- [Configuration](/docs/ecosystem/edge-component/configuration) — per-provider setup, the `X-JIFFY-TOKEN` secret, and the Gateway endpoint URL.
-- [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) — rejected requests, duplicate deliveries, and mentions that never fire.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component) — rejected requests, duplicate deliveries, and mentions that never fire.
 
 ## Providers
+
+Every provider needs the same three things configured — something that runs on Issue and comment events, an ingestion secret sent as `X-JIFFY-TOKEN`, and your Gateway's endpoint address for that provider. What differs is how the automation gets triggered:
+
+| Provider | How it's triggered | Extra piece needed |
+|---|---|---|
+| GitHub | GitHub Actions supports Issue and comment events natively | None |
+| GitLab | Pipelines don't start on Issue activity, so a webhook relay you host yourself bridges the gap | The relay itself |
+| Gitea | Gitea Actions supports Issue and comment events natively | None |
 
 <Cards>
   <Card title="GitHub" href="/docs/ecosystem/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and a worked example" />

@@ -1,0 +1,5 @@
+{
+  "title": "Troubleshooting",
+  "icon": "AlertTriangle",
+  "pages": ["edge-component", "gateway", "agent", "sandbox"]
+}

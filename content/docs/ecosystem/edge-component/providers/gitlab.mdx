@@ -82,6 +82,12 @@ These are set on the relay process itself, not as GitLab CI/CD variables — the
 
 Keep all three credentials — the webhook secret, the API token, and the ingestion token — separate. They're never meant to be reused for each other, and rotating one doesn't affect the others.
 
+## Rotating the ingestion secret
+
+Anyone holding `JIFFY_INGEST_TOKEN` can submit tasks to your Gateway through the GitLab route — never print it in relay logs or commit it anywhere. It's independent of `GITLAB_WEBHOOK_SECRET` and `GITLAB_API_TOKEN`, so rotating it doesn't require touching either of those.
+
+To rotate it: set a new value for `GITLAB_INGEST_TOKEN` on the Gateway and restart it, update `JIFFY_INGEST_TOKEN` in the relay's environment and restart the relay, then trigger a test mention to confirm. This never affects GitHub or Gitea.
+
 ## Example: an Issue from mention to PR
 
 1. Someone opens an Issue, or comments on an existing one, with `@jiffy add a health-check endpoint that returns the service version`.
@@ -90,4 +96,4 @@ Keep all three credentials — the webhook secret, the API token, and the ingest
 4. The Gateway queues a task. A duplicate delivery for the same Issue gets `202 Accepted` with `{"status": "already_queued"}`.
 5. Once finished, the Agent pushes a branch and opens a Merge Request. The Gateway POSTs the summary to the GitLab Issue Notes API — the same thread where the task started.
 
-If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
+If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component) for what each response means.

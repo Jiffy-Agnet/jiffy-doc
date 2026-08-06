@@ -1,5 +1,5 @@
 ---
-title: Configuration
+title: Runtime & Callback
 description: The sandbox environment the Agent depends on — language runtime managers, provider command-line tools, and the per-task callback_url and callback_secret pair.
 ---
 
@@ -36,7 +36,7 @@ The push and the Pull Request are performed with each provider's own command-lin
 | `glab` | GitLab | Authenticate, push the branch, open the Merge Request |
 | `tea` | Gitea | Authenticate, push the branch, open the Pull Request |
 
-Each tool authenticates with the git provider token configured for that provider on the Gateway. That token needs permission to push branches and open Pull Requests on the target repository — the same token described in the Ecosystem [Prerequisites](/docs/ecosystem/installation/prerequisites) page.
+Each tool authenticates with the git provider token configured for that provider on the Gateway. That token needs permission to push branches and open Pull Requests on the target repository — the same token described on the Ecosystem [Prerequisites](/docs/ecosystem/prerequisites) page.
 
 <Callout type="warn">
 Use a long-lived provider token, not a short-lived token issued by a continuous integration run. The Agent pushes and opens its Pull Request asynchronously, well after the triggering run on the provider has already finished.
@@ -44,23 +44,15 @@ Use a long-lived provider token, not a short-lived token issued by a continuous 
 
 ## The model backend
 
-The Agent needs a model backend to run against. Jiffy uses OpenRouter, configured on the Gateway as `OPENROUTER_API_KEY` and passed through to the sandbox. Without a valid key the sandbox starts but the Agent cannot begin work.
+The Agent needs a model backend to run against, but there's nothing to configure to get started: OpenCode, the coding agent running inside the sandbox, ships with free-tier model access built in. Without any configuration at all, the sandbox starts and the Agent can begin work.
+
+If you'd rather use a specific provider — Anthropic's Claude, for example — add that provider's API key as an environment variable in the Gateway configuration, and OpenCode will offer it inside the sandbox alongside the free models. See the Ecosystem [Prerequisites](/docs/ecosystem/prerequisites#model-access-optional) page for how to add one.
 
 ## The per-task callback pair
 
-Two values arrive with every task and are valid only for that task:
+Two values arrive with every task and are valid only for that task: `callback_url` — the originating provider's own comment interface for the Issue that started the task — and `callback_secret`, the credential that report is authenticated with. Both are supplied per task rather than configured anywhere, and neither persists beyond the task that received them. The same pair is what the Gateway's fallback uses if the Agent's own attempt fails, which is why a failed attempt never loses the report.
 
-| Value | What it is |
-|---|---|
-| `callback_url` | The address the Agent posts its completion report to — the originating provider's own comment interface for the Issue that started the task |
-| `callback_secret` | The credential the Agent authenticates that report with |
-
-Two properties of this pair matter:
-
-- **It is dynamic, not fixed.** The `callback_url` is supplied per task and points at the provider, so there is no Gateway-owned route the Agent calls. A GitHub task, a GitLab task, and a Gitea task each receive a different `callback_url`.
-- **It is scoped to one task.** The pair is not a long-lived credential the Agent stores. It arrives with the task, is used once for the completion report, and disappears with the sandbox.
-
-The same pair is what the Gateway's fallback uses if the Agent's own attempt fails, which is why a failed attempt does not lose the report — see [Troubleshooting](/docs/submodules/agent/introduction/troubleshooting).
+See [How It Works](/docs/ecosystem/agent) for exactly how and when the Agent uses this pair during a task.
 
 <Callout type="info">
 Nothing about the callback needs to be configured per repository. It is derived by the Gateway from the provider the task came in on, using a declarative per-provider callback specification.
