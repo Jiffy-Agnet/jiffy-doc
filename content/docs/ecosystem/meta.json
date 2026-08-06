@@ -22,18 +22,18 @@
 
     "---Gateway---",
     "gateway/index",
+    "gateway/role",
     "gateway/configuration",
 
     "---Code Agent---",
     "agent/index",
+    "agent/role",
     "agent/configuration",
 
     "---Sandbox---",
     "sandbox/index",
+    "sandbox/role",
     "sandbox/configuration",
-
-    "---Deployment---",
-    "deployment",
 
     "---Troubleshooting---",
     "troubleshooting/edge-component",
