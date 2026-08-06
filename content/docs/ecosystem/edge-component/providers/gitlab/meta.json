@@ -1,5 +1,0 @@
-{
-  "title": "GitLab",
-  "icon": "GitMerge",
-  "pages": ["index", "setup-pipeline", "issue-registration", "environment-setup"]
-}
