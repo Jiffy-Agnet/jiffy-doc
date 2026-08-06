@@ -22,18 +22,21 @@
 
     "---Gateway---",
     "gateway/index",
+    "gateway/request-lifecycle",
+    "gateway/execution",
     "gateway/configuration",
 
     "---Code Agent---",
     "agent/index",
+    "agent/lifecycle",
+    "agent/callback",
     "agent/configuration",
 
     "---Sandbox---",
     "sandbox/index",
+    "sandbox/lifecycle",
+    "sandbox/isolation",
     "sandbox/configuration",
-
-    "---Deployment---",
-    "deployment",
 
     "---Troubleshooting---",
     "troubleshooting/edge-component",

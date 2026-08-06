@@ -1,0 +1,62 @@
+---
+title: In-Sandbox Lifecycle
+description: What the Agent does once it starts — reading the Issue thread, implementing the change, committing, pushing a branch, and opening the Pull Request.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Once a Celery worker starts the sandbox, control passes to the Agent and stays there until the task is finished. The Gateway does not step in at any point during execution — it only becomes involved again if the Agent's own completion callback does not get through, covered in [Callback & Fallback](/docs/ecosystem/agent/callback).
+
+## The in-sandbox lifecycle
+
+<Steps>
+<Step>
+### Read the requirements
+
+The Agent's input is the full Issue thread that the Edge Component collected — the original Issue body plus every comment, in order. That thread is the task specification. Context that only exists further up the thread, such as a rejected earlier approach or a clarifying reply, is available to the Agent for exactly this reason.
+
+If the repository contains an `AGENTS.md` file, the Agent reads it as well, and follows the repository-specific instructions it contains.
+</Step>
+
+<Step>
+### Implement the change
+
+The Agent works against the isolated copy of the repository inside the sandbox. It reads existing files, writes new ones, and runs commands using the toolchains the sandbox image provides — the language runtime managers described in [Runtime & Tools](/docs/ecosystem/agent/configuration).
+
+Nothing here touches your real repository. The sandbox holds its own copy, and the only way anything leaves the container is the push in the next step.
+</Step>
+
+<Step>
+### Commit
+
+When the change is complete, the Agent commits it. Commit messages are generated from the task, and are subject to whatever commit conventions the repository documents for the Agent to follow.
+</Step>
+
+<Step>
+### Push a branch
+
+The Agent pushes the commit to a new branch on your git provider, using the provider's command-line tool and the provider token configured for the task. If the task did not specify a branch name, one is derived automatically from the task.
+
+This is the first moment anything produced inside the sandbox becomes visible outside it.
+</Step>
+
+<Step>
+### Open the Pull Request
+
+The Agent then opens a Pull Request from that branch, again through the provider's own command-line tool — `gh` for GitHub, `glab` for GitLab, `tea` for Gitea. The Pull Request is the Agent's deliverable. It is never merged automatically; review and merge stay with you.
+</Step>
+
+<Step>
+### Attempt the completion callback
+
+Finally, the Agent makes the **first attempt** at the completion callback: a summary of what it did, together with the link to the Pull Request, posted back to the originating Issue thread.
+
+It sends this to the task's `callback_url`, authenticated with the task's `callback_secret`. That URL and secret arrive with the task itself — the pair points directly at the originating provider's own comment interface, not at any fixed Gateway address. See [Callback & Fallback](/docs/ecosystem/agent/callback) for exactly what happens next.
+</Step>
+</Steps>
+
+## Read next
+
+- [Callback & Fallback](/docs/ecosystem/agent/callback) — the completion callback in detail, and what happens if the Agent's own attempt fails.
+- [Runtime & Tools](/docs/ecosystem/agent/configuration) — language runtime managers, provider command-line tools, and the model backend.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/agent) — callback delivery failures, Pull Request creation failures, and how a failed task is reported.

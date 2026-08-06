@@ -1,0 +1,41 @@
+---
+title: Isolation Mechanisms
+description: The three mechanisms that actually isolate a sandbox — the container boundary, resource limits, and the egress restriction you'll occasionally need to adjust.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Three mechanisms do the real work of keeping a sandbox safely contained while a model-driven Agent runs arbitrary commands inside it.
+
+## The container boundary
+
+The Agent runs as a non-root user in its own filesystem, process, and network namespaces. It cannot see the Gateway, the other services, or anything on the host. The only way anything it produces leaves the container is a push to your git provider.
+
+## Resource limits
+
+Each container is started with a memory ceiling and a pinned processor set. This is not primarily about security — it is about one task being unable to starve the host or its neighbors. A runaway build in one sandbox does not take down the Gateway or slow every other task on the machine.
+
+The specific limits are environment variables you can raise or narrow — see [Resource Limits & Network](/docs/ecosystem/sandbox/configuration).
+
+## Egress restriction
+
+This is the mechanism most worth understanding, because it is the one you will occasionally need to adjust.
+
+Outbound connections are dropped by default. Allowlisted hostnames are resolved when the container starts, and connections to the resolved addresses are permitted. The built-in list covers the common package registries and the hosted git providers; anything else — your self-hosted git server, your model provider's endpoint — has to be added.
+
+<Callout type="warn">
+Hostnames are resolved once, at container start, and matched by address afterwards. A host that fails to resolve at that moment is simply unreachable for the whole task. This fails closed by design, but it does mean a name resolution blip during startup presents itself later as an unexplained connection failure.
+</Callout>
+
+Two limits are worth being honest about:
+
+- **Name resolution leaks.** Queries to the container runtime's resolver are always permitted so allowlisted hosts can be resolved at all. The Agent can therefore *resolve* a host that is not on the list — it simply cannot connect to it.
+- **Enforcement is version four only.** The rules cover IPv4. IPv6 is normally disabled on the bridge network in use; if you enable it, the equivalent IPv6 rules are not applied for you.
+
+Every run logs whether restriction was active and, when it was, the exact effective allowlist — in the Gateway's worker log and again in the container's own startup report.
+
+## Read next
+
+- [Container Lifecycle](/docs/ecosystem/sandbox/lifecycle) — where in the sequence these mechanisms get applied.
+- [Resource Limits & Network](/docs/ecosystem/sandbox/configuration) — the actual environment variables that control all three.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — image problems, a blocked registry, and resource limit failures.

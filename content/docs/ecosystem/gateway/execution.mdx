@@ -1,0 +1,59 @@
+---
+title: Execution & Callback
+description: What a Celery worker does once it picks up a queued task — provisioning the sandbox, handing off to the Agent, and reporting the result back if the Agent's own callback attempt fails.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Once a task is `queued`, the fast, synchronous half of the Gateway's work is over — see [Request Lifecycle](/docs/ecosystem/gateway/request-lifecycle) for that part. From here, a Celery worker picks up the task and can run for the better part of an hour before it resolves.
+
+## Provisioning and execution
+
+The worker picks up the task and does five things in order.
+
+**It loads the payload back from Redis.** If the four hour lifetime has already elapsed, the task fails immediately with a clear message rather than running against an empty request.
+
+**It makes sure the sandbox image exists.** The configured `SANDBOX_IMAGE` is looked up locally. If it is already present this is nearly free. If it is missing, the Gateway builds it from the sandbox Dockerfile that ships with the repository and tags it. Both paths are logged with the elapsed time, so you can tell a slow first run from a slow every run.
+
+**It starts the container.** The status moves to `provisioning` and the container comes up with its memory limit, its pinned processor, and the repository access token in its environment. When network restriction is active — which is the default — the container is attached to a dedicated bridge network, granted the network administration capability, and has its egress rules applied before anything else runs.
+
+<Callout type="warn">
+Provisioning fails closed. If the egress rules cannot be applied, the container is torn down and the task fails. A sandbox is never quietly allowed to run with unrestricted network access because the restriction step did not work.
+</Callout>
+
+**It clones the repository.** The status moves to `cloning`. The access token is injected into the clone address in the format that provider expects, the repository lands in the container's workspace, and the working tree is explicitly moved onto `develop` — the Agent always starts from a known branch rather than whatever the remote happens to point its default at.
+
+**It hands off to the Agent.** The status moves to `running`, the instructions are written into the container, and the Agent is started. From here the Gateway is simply waiting. When the Agent finishes it leaves a structured result file behind in the workspace, which the Gateway reads to learn whether the run succeeded, which branch was pushed, whether a Pull Request was opened, and — importantly — whether the Agent managed to deliver its own callback.
+
+Whatever the outcome, the container is stopped and removed on the way out, unless cleanup has been deliberately turned off for debugging.
+
+## The callback, and the fallback
+
+Reporting is intentionally the Agent's job first. The Agent makes exactly one attempt from inside the sandbox, and records the outcome in its result file as an `attempted` and `succeeded` pair.
+
+The Gateway reads that pair and decides:
+
+| What the Agent recorded | What the Gateway does |
+|---|---|
+| Attempted, and succeeded | Nothing. The report is already posted; it logs that it is skipping |
+| Attempted, but failed | Sends the report itself |
+| Never attempted | Sends the report itself |
+| No usable result file at all | Treats the task as failed and sends the failure report itself |
+
+When the Gateway does send, it builds the request from the same declarative per-provider callback specification the Agent was given — same method, same authentication header, same content type, same body shape. It then retries up to **three times**, waiting two seconds between attempts, with a thirty second timeout on each request. If all three fail, it logs the exhaustion together with the callback address and the status it was trying to report.
+
+<Callout type="info">
+Two different retry counts live near each other and are easy to confuse. Three is the number of *callback delivery* attempts. Separately, the Celery task itself is registered with up to three retries and a sixty second delay, which only apply to genuinely unexpected internal errors — not to a task that failed for a reason the Gateway understood.
+</Callout>
+
+## Recovery at worker startup
+
+When a Celery worker becomes ready, it looks for any task still sitting at `queued` and dispatches it again. This covers the case where both the broker and the worker were restarted — a host reboot, for instance — and the broker lost messages that were never acknowledged.
+
+For the ordinary case of a worker simply dying mid-task, the recovery is handled at the broker level instead: tasks are acknowledged late and rejected when a worker is lost, so the broker redelivers them without the Gateway needing to do anything.
+
+## Read next
+
+- [Request Lifecycle](/docs/ecosystem/gateway/request-lifecycle) — how the ingestion request that created this task was verified and deduplicated.
+- [Environment Variables](/docs/ecosystem/gateway/configuration) — the environment variables that control ingestion secrets, the sandbox image, resource limits, cleanup, the network allowlist, and the Docker connection.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/gateway) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.
