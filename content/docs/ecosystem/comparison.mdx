@@ -1,6 +1,6 @@
 ---
 title: Comparison
-description: How Jiffy's self-hosted, thin-Gateway architecture differs from generic CI bots and hosted AI coding agents.
+description: How Jiffy's self-hosted, thin-Gateway architecture differs from generic CI bots, hosted AI coding agents, and specific tools like Claude Code, Kilo Code, and Codex.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -28,6 +28,23 @@ A number of AI coding agents are offered as a managed, hosted service: you grant
 None of this makes Jiffy a drop-in replacement for a fully managed product — you're taking on running the Gateway and sandbox yourself. The trade is control and data locality in exchange for operational responsibility.
 </Callout>
 
+## Versus specific coding agents
+
+The comparisons above are about categories of tooling. In practice, most teams are actually weighing Jiffy against one or two named products, so here's a more concrete look at three widely used coding agents: Claude Code (Anthropic's coding agent, typically run as a GitHub Action), Kilo Code (an open-source, multi-model coding agent), and Codex (OpenAI's coding agent).
+
+| Dimension | Jiffy | Claude Code | Kilo Code | Codex |
+|---|---|---|---|---|
+| Git providers | GitHub, GitLab, and Gitea, equally supported | GitHub, via its official GitHub Action | GitHub and GitLab, through its cloud-agent feature | GitHub only |
+| Where the agent runs | Fully on your own infrastructure — Gateway and sandbox both | Inside a GitHub Actions runner; the model call itself goes to a hosted provider | The core agent can run entirely on your machine; its cloud-agent feature runs on hosted infrastructure | OpenAI's hosted cloud, or a runner that calls OpenAI's API |
+| Model choice | Model-agnostic — you configure which model powers the agent | Built around Anthropic's models, extensible to a few compatible cloud providers | Model-agnostic — bring your own key across many providers | Tied to OpenAI's own models |
+| How a task starts | An `@jiffy` mention in an Issue thread, filtered at the edge before it ever reaches the Gateway | An `@claude` mention in an Issue or pull request comment | A task assigned from the editor, the CLI, or a connected repository | An issue, a label, or a task started from a connected app |
+| Running several tasks at once | A worker pool picks up queued tasks, each in its own isolated container | Limited by how many Actions jobs your runners can run in parallel | Cloud agents can run in parallel, each in its own isolated workspace | Cloud tasks can run in parallel, each in its own isolated environment |
+| Cost model | Open-source; you pay only for your own infrastructure and whichever model you choose | Free action, but usage draws from your Anthropic usage budget | Open-source; usage-based cost from whichever model you bring | Requires a ChatGPT subscription plan |
+
+<Callout type="info">
+This space moves fast — treat the table as a snapshot rather than a permanent feature matrix, and check each product's own documentation for anything you're relying on.
+</Callout>
+
 ## Where Jiffy fits
 
-Jiffy is a good fit for teams that already default to Issue-driven workflows, want the agent's execution environment on their own infrastructure, and need GitHub/GitLab/Gitea to be equally supported rather than one primary platform with others as an afterthought. It's not built to replace a full CI pipeline, and it's explicitly scoped for low request volumes rather than organization-wide, high-throughput automation.
+Jiffy is a good fit for teams that already default to Issue-driven workflows, want the agent's execution environment on their own infrastructure, and need GitHub, GitLab, and Gitea to be equally supported rather than one primary platform with others as an afterthought. It's not built to replace a full CI pipeline.
