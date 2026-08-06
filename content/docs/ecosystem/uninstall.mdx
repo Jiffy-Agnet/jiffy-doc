@@ -15,17 +15,13 @@ Removing volumes deletes the Gateway's SQLite database, including task history. 
 
 ## Step 1 — Stop and remove the containers and volumes
 
-From the `jiffy_gateway` directory:
+Run this from wherever Jiffy Gateway is installed — `~/jiffy-gateway` if you used the one-line installer, or the directory you cloned into (`gateway`, unless you renamed it) if you set it up by hand:
 
 ```bash
-docker compose down --volumes
+docker compose -f compose.prod.yml down --volumes
 ```
 
-This stops `web`, `celery`, `redis`, and `docker-socket-proxy`, removes the containers, and deletes their volumes (including the SQLite database and the Redis data directory). If you deployed with the production Compose file instead, target it explicitly:
-
-```bash
-docker compose -f docker-compose.prod.yml down --volumes
-```
+This stops `web`, `celery`, `redis`, and `docker-socket-proxy`, removes the containers, and deletes their volumes (including the SQLite database and the Redis data directory).
 
 ## Step 2 — Remove the images (optional)
 
@@ -40,7 +36,7 @@ The sandbox image tag should match whatever `SANDBOX_IMAGE` was set to in your `
 
 ## Step 3 — Revoke issued tokens
 
-Removing the Gateway doesn't invalidate any of the credentials it was configured with — those live with your git provider and OpenRouter, so they need to be revoked separately:
+Removing the Gateway doesn't invalidate any of the credentials it was configured with — those live with your git provider, and with your model provider if you configured one — so they need to be revoked separately:
 
 <Steps>
 <Step>
@@ -72,9 +68,9 @@ Delete `.github/workflows/jiffy.yml` (GitHub), `.gitea/workflows/jiffy.yml` (Git
 </Step>
 
 <Step>
-### Discard your OpenRouter API key
+### Discard your model provider API key, if you set one
 
-If the key was created solely for this Jiffy instance, revoke it from your [OpenRouter dashboard](https://openrouter.ai/) as well.
+Jiffy's sandbox runs on OpenCode's free-tier models by default, so there may be nothing to revoke here. If you added a specific provider's API key instead (for example Anthropic's Claude, or OpenRouter), discard it from that provider's dashboard as well — only if it was created solely for this Jiffy instance.
 </Step>
 </Steps>
 
@@ -82,11 +78,12 @@ If the key was created solely for this Jiffy instance, revoke it from your [Open
 The per-provider ingestion secrets (`GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, `GITEA_INGEST_TOKEN`) only lived in your `.env` and each Edge Component's configuration — once both are gone, there's nothing further to revoke for those.
 </Callout>
 
-## Step 4 — Delete the local clone (optional)
+## Step 4 — Delete the local install (optional)
 
 ```bash
-cd ..
-rm -rf jiffy_gateway
+rm -rf ~/jiffy-gateway
 ```
+
+If you set Jiffy up by hand instead of with the one-line installer, remove whichever directory you cloned the repository into instead (`gateway`, unless you renamed it).
 
 This also removes the local `.env` file and anything the installer generated alongside it.
