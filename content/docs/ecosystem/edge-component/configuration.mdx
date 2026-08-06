@@ -14,7 +14,7 @@ Configuring the Edge Component means three things, whichever provider you are on
 
 Nothing else needs to be configured. The Edge Component holds no other state.
 
-This page covers the concepts common to all three providers. The step-by-step instructions live in the [Providers](/docs/submodules/edge-component/providers/github) section, one fully detailed section per provider.
+This page covers the concepts common to all three providers. The step-by-step instructions live on the [Providers](/docs/ecosystem/edge-component/providers) pages, one per provider.
 
 ## The two settings every provider needs
 
@@ -49,7 +49,7 @@ Two requirements apply everywhere:
 - **Match the path to the provider.** Posting to another provider's path causes the Gateway to validate against that provider's secret, which fails even though the secret itself is valid.
 
 <Callout type="info">
-The request is made by the machine running the automation — a hosted runner, a shared runner, or your own act runner — not by the provider's web service. The endpoint must be reachable from wherever that runner is.
+The request is made by the machine running the automation — a hosted runner, a shared runner, or your own relay process — not by the provider's web service. The endpoint must be reachable from wherever that runner or relay is.
 </Callout>
 
 ## What differs between providers
@@ -59,17 +59,17 @@ The concepts above are identical everywhere. What changes is how the automation 
 | Provider | How the automation is triggered | Extra setup |
 |---|---|---|
 | GitHub | GitHub Actions supports Issue and comment events natively | None |
-| GitLab | Pipelines do not start on Issue activity, so a project webhook bridges the gap | A project webhook and a pipeline trigger token |
-| Gitea | Gitea Actions supports Issue and comment events natively | Actions enabled on the instance and the repository, and a registered act runner |
+| GitLab | Pipelines don't start on Issue activity, so a webhook relay you host yourself bridges the gap | The relay process itself |
+| Gitea | Gitea Actions supports Issue and comment events natively | None |
 
 ## Per-provider setup
 
-Follow the section for the provider you are connecting. Each one covers the provider itself, the automation setup, how Issues register a task, and the full environment configuration.
+Each provider has its own page: the automation setup, how Issues register a task, and the complete environment configuration.
 
 <Cards>
-  <Card title="GitHub" href="/docs/submodules/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and the GitHub ingestion route" />
-  <Card title="GitLab" href="/docs/submodules/edge-component/providers/gitlab" description="The webhook bridge, pipeline trigger tokens, project variables, and the GitLab ingestion route" />
-  <Card title="Gitea" href="/docs/submodules/edge-component/providers/gitea" description="Act runners, instance and repository requirements, and the Gitea ingestion route" />
+  <Card title="GitHub" href="/docs/ecosystem/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and the GitHub ingestion route" />
+  <Card title="GitLab" href="/docs/ecosystem/edge-component/providers/gitlab" description="The webhook relay, project variables, and the GitLab ingestion route" />
+  <Card title="Gitea" href="/docs/ecosystem/edge-component/providers/gitea" description="Gitea Actions, repository secrets, and the Gitea ingestion route" />
 </Cards>
 
 ## Rotating an ingestion secret
@@ -80,4 +80,4 @@ The procedure is the same on every provider, and because the secrets are indepen
 2. Update the stored secret in every repository or project whose Edge Component uses that provider.
 3. Trigger a test mention on one of them to confirm the new value is accepted.
 
-Between steps 1 and 2, a repository still holding the old value receives an authentication failure from the Gateway — see [Troubleshooting](/docs/submodules/edge-component/introduction/troubleshooting).
+Between steps 1 and 2, a repository still holding the old value receives an authentication failure from the Gateway — see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting).
