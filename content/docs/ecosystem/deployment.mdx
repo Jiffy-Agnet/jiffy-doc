@@ -38,8 +38,8 @@ The Edge Component is the only thing that lives in your git provider (a GitHub A
 ### Clone the repository
 
 ```bash
-git clone https://github.com/javadib/jiffy_gateway.git
-cd jiffy_gateway
+git clone https://github.com/Jiffy-Agnet/gateway.git
+cd gateway
 ```
 </Step>
 
@@ -59,7 +59,7 @@ At minimum, set these for a real deployment (not just local testing):
 | `DEBUG` | `False` |
 | `ALLOWED_HOSTS` | Your Gateway's real hostname(s) |
 | `REDIS_PASSWORD` | A strong password (the prod Compose file requires Redis auth) |
-| `SANDBOX_OPENCODE_CONFIG_PATH` | Leave this to the value already wired in `docker-compose.prod.yml` — don't hand-edit it to a local filesystem path |
+| `SANDBOX_OPENCODE_CONFIG_PATH` | Leave this to the value already wired in `compose.prod.yml` — don't hand-edit it to a local filesystem path |
 
 Then generate one ingestion secret **per provider you plan to connect** — never reuse a secret across providers:
 
@@ -74,7 +74,7 @@ Put each result in the matching variable: `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_
 ### Start the stack
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f compose.prod.yml up -d
 ```
 
 This brings up four services on an internal Docker network: `web` (the Django app), `celery` (the task worker), `redis`, and `docker-socket-proxy` (a restricted proxy so `celery` can manage Sandbox containers without direct access to the host's Docker socket).
@@ -88,7 +88,7 @@ Database migrations run automatically — the container's entrypoint runs `manag
 ### Build the Sandbox image
 
 ```bash
-docker build -t jiffy-sandbox:1.1.1 ./docker/sandbox
+docker build -t jiffy-sandbox:1.2.0 ./docker/sandbox
 ```
 
 The tag must match `SANDBOX_IMAGE` in your `.env`. If you skip this, the Celery worker will build it automatically on first use via the Docker Socket Proxy's `BUILD` permission — building it ahead of time just avoids a delay on your first task.
@@ -99,7 +99,7 @@ The tag must match `SANDBOX_IMAGE` in your `.env`. If you skip this, the Celery 
 
 ```bash
 curl -f http://localhost:8080/
-docker compose -f docker-compose.prod.yml logs -f celery
+docker compose -f compose.prod.yml logs -f celery
 ```
 
 You should see the Celery worker log that it's connected to Redis and listening on the `execute` queue.
@@ -107,7 +107,7 @@ You should see the Celery worker log that it's connected to Redis and listening 
 </Steps>
 
 <Callout type="warn">
-`docker-compose.prod.yml` currently overrides the container command to Django's `runserver`. For real production traffic, consider dropping that override so the image's own `gunicorn` entrypoint is used instead.
+`compose.prod.yml` currently overrides the container command to Django's `runserver`. For real production traffic, consider dropping that override so the image's own `gunicorn` entrypoint is used instead.
 </Callout>
 
 ## Step 2 — Connect a repository
@@ -229,7 +229,7 @@ GitLab webhook (Issues + Comments) ──▶ Relay ──▶ Gateway /api/gitlab
 
 **GitLab project setup** (Settings → Webhooks): URL = your relay's endpoint, Secret Token = `GITLAB_WEBHOOK_SECRET`, trigger on **Issues events** and **Comments**.
 
-The full relay implementation (a ~150-line Python script using only the standard library) is documented in the Gateway repo's [`docs/jiffy-gitlab-setup.md`](https://github.com/javadib/jiffy_gateway/blob/master/docs/jiffy-gitlab-setup.md) — copy it directly and run it behind a process supervisor (systemd, supervisord, or a container with a restart policy).
+The full relay implementation (a ~150-line Python script using only the standard library) is documented in the Gateway repo's [`docs/jiffy-gitlab-setup.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/docs/jiffy-gitlab-setup.md) — copy it directly and run it behind a process supervisor (systemd, supervisord, or a container with a restart policy).
 
 <Callout type="warn">
 Keep `GITLAB_WEBHOOK_SECRET`, `GITLAB_API_TOKEN`, and `JIFFY_INGEST_TOKEN` as three separate credentials — don't reuse one for another. If the relay goes down, all `@jiffy` mentions on that project are silently ignored, so monitor it.
@@ -250,7 +250,7 @@ Create `.gitea/workflows/jiffy.yml`. Gitea Actions supports the same trigger/con
 
 Key differences from the GitHub version: `github.server_url` resolves to your Gitea instance's URL (a Gitea Actions compatibility feature, not a bug), and every secret must be passed through `env:` rather than interpolated directly into `run:` shell strings — Gitea masks `env:`-sourced secrets in logs, but raw `${{ }}` interpolation into a shell command can still leak values via error output.
 
-The complete working workflow (issue/comment fetch, thread assembly, and dispatch) is in the Gateway repo's [`docs/gitea_setup.md`](https://github.com/javadib/jiffy_gateway/blob/master/docs/gitea_setup.md) — copy it directly into `.gitea/workflows/jiffy.yml`.
+The complete working workflow (issue/comment fetch, thread assembly, and dispatch) is in the Gateway repo's [`docs/gitea_setup.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/docs/gitea_setup.md) — copy it directly into `.gitea/workflows/jiffy.yml`.
 
 </Tab>
 </Tabs>
@@ -258,7 +258,7 @@ The complete working workflow (issue/comment fetch, thread assembly, and dispatc
 ## Step 3 — Verify end-to-end
 
 1. Open an Issue on the connected repo and mention the bot, e.g. `@jiffy add a health-check endpoint`.
-2. Confirm the Edge Component fired (check the Action/relay logs) and the Gateway received it (`docker compose -f docker-compose.prod.yml logs -f celery`).
+2. Confirm the Edge Component fired (check the Action/relay logs) and the Gateway received it (`docker compose -f compose.prod.yml logs -f celery`).
 3. Wait for the task to complete — you should see a new branch, an opened PR/MR, and a summary comment posted back on the original Issue.
 
 ## Production checklist
@@ -267,8 +267,8 @@ The complete working workflow (issue/comment fetch, thread assembly, and dispatc
 - `REDIS_PASSWORD` set — the prod Compose file requires Redis auth
 - The Gateway sits behind a reverse proxy (nginx, Caddy, Traefik, …) terminating TLS — nothing in this stack does TLS itself
 - The Docker Socket Proxy is never exposed on a host port (it isn't, by default) — only reachable from `web`/`celery` on the internal network
-- Put a calendar reminder to rotate every long-lived PAT/token before it expires — see [`SECRETS.md`](https://github.com/javadib/jiffy_gateway/blob/master/SECRETS.md) for the full rotation procedure
-- SQLite is fine at low volume (a few hundred requests/day); a config-only move to PostgreSQL is on the roadmap for larger deployments
+- Put a calendar reminder to rotate every long-lived PAT/token before it expires — see [`SECRETS.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/SECRETS.md) for the full rotation procedure
+- SQLite is the default; a config-only move to PostgreSQL is on the roadmap for teams that want it
 
 ## Troubleshooting
 
@@ -282,8 +282,8 @@ The complete working workflow (issue/comment fetch, thread assembly, and dispatc
 ## Next steps
 
 <Cards>
-  <Card title="Gateway" href="/docs/submodules/gateway" description="How task ingestion, queueing, and callbacks work" />
-  <Card title="Sandbox" href="/docs/submodules/sandbox" description="What runs inside the isolated execution environment" />
-  <Card title="Edge Component" href="/docs/submodules/edge-component" description="Mention detection and thread collection per provider" />
-  <Card title="Agent" href="/docs/submodules/agent" description="How the coding agent executes a task" />
+  <Card title="Gateway" href="/docs/ecosystem/gateway" description="How task ingestion, queueing, and callbacks work" />
+  <Card title="Sandbox" href="/docs/ecosystem/sandbox" description="What runs inside the isolated execution environment" />
+  <Card title="Edge Component" href="/docs/ecosystem/edge-component" description="Mention detection and thread collection per provider" />
+  <Card title="Agent" href="/docs/ecosystem/agent" description="How the coding agent executes a task" />
 </Cards>
