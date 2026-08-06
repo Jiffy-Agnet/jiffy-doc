@@ -96,4 +96,4 @@ To rotate it: set a new value for `GITLAB_INGEST_TOKEN` on the Gateway and resta
 4. The Gateway queues a task. A duplicate delivery for the same Issue gets `202 Accepted` with `{"status": "already_queued"}`.
 5. Once finished, the Agent pushes a branch and opens a Merge Request. The Gateway POSTs the summary to the GitLab Issue Notes API — the same thread where the task started.
 
-If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
+If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component) for what each response means.

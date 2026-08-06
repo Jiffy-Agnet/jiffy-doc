@@ -39,7 +39,7 @@ Every task gets a brand new container, and that container never serves a second 
 The container is torn down whether the task succeeded or failed. What survives is exactly what the Agent pushed to your git provider and what it reported back.
 
 <Callout type="info">
-Because the container is destroyed at the end, nothing inside it can be inspected after the fact. When you expect to need that, the Gateway's cleanup behavior can be turned off deliberately — see [Configuration](/docs/submodules/sandbox/introduction/configuration).
+Because the container is destroyed at the end, nothing inside it can be inspected after the fact. When you expect to need that, the Gateway's cleanup behavior can be turned off deliberately — see [Configuration](/docs/ecosystem/sandbox/configuration).
 </Callout>
 
 ## One generic image, not one per language
@@ -62,6 +62,6 @@ The image is a Debian base carrying:
 
 ## Read next
 
-- [Role](/docs/submodules/sandbox/introduction/role) — the tooling it provides, and the isolation it actually enforces.
-- [Configuration](/docs/submodules/sandbox/introduction/configuration) — the image tag, resource limits, cleanup, and the network allowlist.
-- [Troubleshooting](/docs/submodules/sandbox/introduction/troubleshooting) — image problems, a blocked registry, and resource limit failures.
+- [Role](/docs/ecosystem/sandbox/role) — the tooling it provides, and the isolation it actually enforces.
+- [Configuration](/docs/ecosystem/sandbox/configuration) — the image tag, resource limits, cleanup, and the network allowlist.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — image problems, a blocked registry, and resource limit failures.

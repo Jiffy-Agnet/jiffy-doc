@@ -22,7 +22,7 @@ If the repository contains an `AGENTS.md` file, the Agent reads it as well, and 
 <Step>
 ### Implement the change
 
-The Agent works against the isolated copy of the repository inside the sandbox. It reads existing files, writes new ones, and runs commands using the toolchains the sandbox image provides — the language runtime managers described in [Configuration](/docs/submodules/agent/introduction/configuration).
+The Agent works against the isolated copy of the repository inside the sandbox. It reads existing files, writes new ones, and runs commands using the toolchains the sandbox image provides — the language runtime managers described in [Configuration](/docs/ecosystem/agent/configuration).
 
 Nothing here touches your real repository. The sandbox holds its own copy, and the only way anything leaves the container is the push in the next step.
 </Step>
@@ -79,4 +79,4 @@ The Agent attempting the callback first is what keeps the common path short: on 
 
 If the Agent's own attempt does not succeed, the Gateway's fallback path runs the callback on its behalf, retrying up to 3 times using the same per-provider callback specification. The user-visible outcome is identical — a comment on the originating Issue with the summary and the Pull Request link. Only the sender differs.
 
-See [Troubleshooting](/docs/submodules/agent/introduction/troubleshooting) for what to check when a task completed but no comment appeared.
+See [Troubleshooting](/docs/ecosystem/troubleshooting/agent) for what to check when a task completed but no comment appeared.

@@ -103,4 +103,4 @@ To rotate it: set a new value for `GITEA_INGEST_TOKEN` on the Gateway and restar
 3. It joins them into one thread and posts it to `/api/gitea/ingestion` with `X-JIFFY-TOKEN` set to `JIFFY_GITEA_INGEST_TOKEN`. The Gateway queues a task.
 4. Once the Agent finishes, it pushes a branch and opens a Pull Request, and the Gateway posts the summary back as a comment on the same Issue, using `GITEA_ACCESS_TOKEN` to authenticate the callback.
 
-If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
+If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component) for what each response means.
