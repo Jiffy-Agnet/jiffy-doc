@@ -1,0 +1,101 @@
+---
+title: Request Lifecycle
+description: How the Gateway verifies, validates, and deduplicates an ingestion request inside a single web request, and the seven statuses a task can hold from that point on.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+The ingestion request is the fast half of the Gateway's work. It happens inside a single web request from the Edge Component and finishes in milliseconds — whatever happens afterward, in [Execution & Callback](/docs/ecosystem/gateway/execution), is a separate, much longer story.
+
+## The ingestion request
+
+<Steps>
+<Step>
+### Verify the token
+
+Every ingestion route reads the `X-JIFFY-TOKEN` header and compares it against the secret configured for that route — `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, or `GITEA_INGEST_TOKEN`. The comparison is a constant-time one, so a wrong token gives nothing away by how long it takes to be rejected.
+
+A missing header, an empty header, or a route whose secret is not configured at all all end the same way: `401 Unauthorized`. Nothing is written, and no task exists.
+</Step>
+
+<Step>
+### Validate the payload
+
+The body is parsed as JavaScript Object Notation and run through the ingestion serializer. The payload has to carry three objects:
+
+| Object | What it holds |
+|---|---|
+| `repo` | The repository address, the access token used for cloning and pushing, and a username where the provider requires one |
+| `issue` | The external Issue identifier, plus either the ordered `turns` array or the legacy flat `text` |
+| `callback` | The `url` the report goes to and the `secret` it is authenticated with |
+
+Anything malformed or incomplete gets `400 Bad Request` with the specific field errors. Again, no task is created.
+</Step>
+
+<Step>
+### Deduplicate against the Issue lock
+
+Before anything is written, the Gateway tries to take a lock in Redis keyed on the provider and the external Issue identifier:
+
+```
+jiffy:lock:issue:{provider}:{external_issue_id}
+```
+
+The lock is set only if it does not already exist, and it expires on its own after **five minutes**. If the lock could not be taken, a task for that Issue is already in flight and the Gateway answers:
+
+```http
+HTTP/1.1 202 Accepted
+
+{"status": "already_queued"}
+```
+
+This is the mechanism that stops one Issue from producing two sandboxes, two branches, and two competing Pull Requests when a comment is edited or a delivery is retried.
+</Step>
+
+<Step>
+### Record the task and stash the payload
+
+Inside a single database transaction the Gateway creates the `Task` row — provider, repository address, external Issue identifier, callback address, callback secret, a status of `queued`, and the Celery identifier it is about to dispatch under.
+
+The full validated payload is too large and too sensitive to sit in the row, so it goes into Redis under `jiffy:task:{task_id}:payload` with a **four hour** lifetime. That lifetime is the real outer bound on how long a queued task can wait before it becomes unrunnable.
+</Step>
+
+<Step>
+### Dispatch, and answer
+
+The Celery task is dispatched only once the transaction commits, so a worker can never pick up a task whose row is not visible yet. The Gateway then answers the Edge Component:
+
+```http
+HTTP/1.1 202 Accepted
+
+{"task_id": 42, "status": "queued"}
+```
+
+The web request is over. Everything from here happens in a worker — see [Execution & Callback](/docs/ecosystem/gateway/execution).
+</Step>
+</Steps>
+
+## The task lifecycle
+
+The `Task` model defines seven statuses. Five of them are the ordinary path a healthy task walks, one is the terminal failure, and one is defined but not currently assigned by the execution code:
+
+| Status | Set when | Notes |
+|---|---|---|
+| `queued` | The task row is created during ingestion | Also the status the worker looks for at startup when recovering orphaned tasks |
+| `provisioning` | Just before the sandbox container is started | The sandbox image has already been confirmed or built by this point |
+| `cloning` | The container is up and the repository is being cloned into it | Includes fetching and checking out `develop` |
+| `running` | The Agent has been handed its instructions | The long one — this is where nearly all of a task's wall clock time is spent |
+| `reporting` | *Not currently assigned* | Defined in the model as a reserved state; reporting happens inside the transition out of `running` |
+| `done` | The Agent reported success and the callback was handled | The Pull Request address, branch name, and detected language are written to the row first |
+| `failed` | Anything went wrong, at any point | The reason is stored on the row in `error_message` |
+
+<Callout type="info">
+Because `reporting` is never assigned today, a task you observe is always sitting at `queued`, `provisioning`, `cloning`, `running`, `done`, or `failed`. Seeing which one tells you immediately which stage to investigate — see [Troubleshooting](/docs/ecosystem/troubleshooting/gateway).
+</Callout>
+
+## Read next
+
+- [Execution & Callback](/docs/ecosystem/gateway/execution) — what happens once a worker picks up a `queued` task: provisioning, execution, and reporting the result back.
+- [Environment Variables](/docs/ecosystem/gateway/configuration) — the environment variables that control ingestion secrets, the sandbox image, resource limits, cleanup, the network allowlist, and the Docker connection.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/gateway) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.

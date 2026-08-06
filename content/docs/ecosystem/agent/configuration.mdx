@@ -1,6 +1,6 @@
 ---
-title: Runtime & Callback
-description: The sandbox environment the Agent depends on — language runtime managers, provider command-line tools, and the per-task callback_url and callback_secret pair.
+title: Runtime & Tools
+description: The sandbox environment the Agent depends on — language runtime managers, provider command-line tools, and the model backend.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -10,7 +10,7 @@ The Agent is not configured directly. Everything it needs is either baked into t
 Configuration therefore comes in two layers:
 
 1. **The sandbox image** — the language runtime managers and provider command-line tools the Agent can call.
-2. **The task payload** — the requirements, the provider token, and the `callback_url` and `callback_secret` pair.
+2. **The task payload** — the requirements, the provider token, and the `callback_url` and `callback_secret` pair described in [Callback & Fallback](/docs/ecosystem/agent/callback).
 
 ## Language runtime managers
 
@@ -48,12 +48,8 @@ The Agent needs a model backend to run against, but there's nothing to configure
 
 If you'd rather use a specific provider — Anthropic's Claude, for example — add that provider's API key as an environment variable in the Gateway configuration, and OpenCode will offer it inside the sandbox alongside the free models. See the Ecosystem [Prerequisites](/docs/ecosystem/prerequisites#model-access-optional) page for how to add one.
 
-## The per-task callback pair
+## Read next
 
-Two values arrive with every task and are valid only for that task: `callback_url` — the originating provider's own comment interface for the Issue that started the task — and `callback_secret`, the credential that report is authenticated with. Both are supplied per task rather than configured anywhere, and neither persists beyond the task that received them. The same pair is what the Gateway's fallback uses if the Agent's own attempt fails, which is why a failed attempt never loses the report.
-
-See [How It Works](/docs/ecosystem/agent) for exactly how and when the Agent uses this pair during a task.
-
-<Callout type="info">
-Nothing about the callback needs to be configured per repository. It is derived by the Gateway from the provider the task came in on, using a declarative per-provider callback specification.
-</Callout>
+- [Callback & Fallback](/docs/ecosystem/agent/callback) — the `callback_url`/`callback_secret` pair in action, and the Gateway's fallback if the Agent's own attempt fails.
+- [In-Sandbox Lifecycle](/docs/ecosystem/agent/lifecycle) — how the Agent actually uses this environment during a task.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/agent) — callback delivery failures, Pull Request creation failures, and how a failed task is reported.
