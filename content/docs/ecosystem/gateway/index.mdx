@@ -1,5 +1,5 @@
 ---
-title: Overview
+title: What It Does
 description: What the Gateway is — the thin, central coordinator that verifies incoming requests, queues tasks, provisions the sandbox, and makes sure the result gets reported back.
 ---
 
@@ -12,17 +12,17 @@ What makes the Gateway pleasant to reason about is how little it actually does. 
 ## Where it sits in the pipeline
 
 ```
-  ┌────────────────────┐   verified payload   ┌───────────────────────────────┐
-  │   Edge Component   │ ───────────────────▶ │            Gateway            │
+  ┌──────────────────┐   verified payload   ┌───────────────────────────────────┐
+  │   Edge Component   │ ────────────────▶ │            Gateway            │
   │  GitHub Action /   │   X-JIFFY-TOKEN      │  Django  — three ingestion    │
-  │  GitLab job /      │                      │            routes             │
+  │  GitLab relay /    │                      │            routes             │
   │  Gitea Action      │                      │  Redis   — locks and payloads │
-  └────────────────────┘                      │  SQLite  — the Task record    │
+  └──────────────────┘                      │  SQLite  — the Task record    │
                                               │  Celery  — the execute queue  │
                                               └───────────────┬───────────────┘
                                                               │ starts, then steps back
                                                               ▼
-                                              ┌───────────────────────────────┐
+                                              ┌───────────────────────────────────┐
                                               │            Sandbox            │
                                               │   isolated Docker container   │
                                               │   the Agent runs inside it    │
@@ -58,18 +58,12 @@ The Gateway only re-enters the picture at the very end, and only if the Agent's 
 The Gateway's neutrality is what makes new providers cheap. A provider is described by a declarative callback specification and a secret — adding one does not change how tasks are queued, provisioned, or executed.
 </Callout>
 
-## The three ingestion routes
+## Ingestion secrets, one route per provider
 
-```
-POST /api/github/ingestion     verified against  GITHUB_INGEST_TOKEN
-POST /api/gitlab/ingestion     verified against  GITLAB_INGEST_TOKEN
-POST /api/gitea/ingestion      verified against  GITEA_INGEST_TOKEN
-```
-
-Each route carries its own independently configured secret. A secret that is valid on one route is rejected on the other two, so a leaked GitHub secret cannot be used to submit work through the GitLab or Gitea route.
+Each provider posts to its own route, protected by its own independently configured secret. A secret valid on one route is rejected on the other two, so a leaked GitHub secret cannot be used to submit work through the GitLab or Gitea route. See [Environment Variables](/docs/ecosystem/gateway/configuration) for the full list of ingestion secrets and what each one protects.
 
 ## Read next
 
-- [Role](/docs/submodules/gateway/introduction/role) — verification, deduplication, the task lifecycle, sandbox provisioning, and the callback fallback.
-- [Configuration](/docs/submodules/gateway/introduction/configuration) — the environment variables that control ingestion secrets, the sandbox image, resource limits, cleanup, the network allowlist, and the Docker connection.
-- [Troubleshooting](/docs/submodules/gateway/introduction/troubleshooting) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.
+- [Request Lifecycle](/docs/ecosystem/gateway/role) — verification, deduplication, the task lifecycle, sandbox provisioning, and the callback fallback.
+- [Environment Variables](/docs/ecosystem/gateway/configuration) — the environment variables that control ingestion secrets, the sandbox image, resource limits, cleanup, the network allowlist, and the Docker connection.
+- [Diagnosing by Status](/docs/ecosystem/gateway/troubleshooting) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.
