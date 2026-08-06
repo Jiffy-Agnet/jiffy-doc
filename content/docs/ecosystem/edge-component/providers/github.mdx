@@ -30,11 +30,13 @@ Under **Settings → Secrets and variables → Actions**:
 
 | Name | Kind | Value |
 |---|---|---|
-| `JIFFY_GATEWAY_URL` | Secret | Your Gateway's base URL, e.g. `https://jiffy.example.com` |
+| `JIFFY_GATEWAY_URL` | Variable | Your Gateway's base URL, e.g. `https://jiffy.example.com` |
 | `JIFFY_GITHUB_INGEST_TOKEN` | Secret | The value of `GITHUB_INGEST_TOKEN` from the Gateway's `.env` |
 | `JIFFY_REPO_PAT` | Secret | A fine-grained PAT with Contents (Read/Write) and Pull requests (Read/Write) on this repo |
 | `JIFFY_BOT_LOGIN` | Variable | The bot account's GitHub login, used to tell agent replies apart from human ones |
 | `JIFFY_USER_WHITELIST` | Variable (optional) | Comma-separated GitHub usernames allowed to trigger Jiffy |
+
+`JIFFY_GATEWAY_URL` isn't a credential — it's just the address the workflow posts to — so it belongs under **Variables**, not **Secrets**. The two tabs sit right next to each other in the GitHub UI and are easy to mix up.
 </Step>
 
 <Step>
@@ -66,7 +68,7 @@ jobs:
       - name: Collect thread and dispatch to Jiffy Gateway
         uses: actions/github-script@v9
         env:
-          JIFFY_URL: ${{ secrets.JIFFY_GATEWAY_URL }}
+          JIFFY_URL: ${{ vars.JIFFY_GATEWAY_URL }}
           JIFFY_INGEST_TOKEN: ${{ secrets.JIFFY_GITHUB_INGEST_TOKEN }}
           JIFFY_BOT_LOGIN: ${{ vars.JIFFY_BOT_LOGIN }}
           JIFFY_USER_WHITELIST: ${{ vars.JIFFY_USER_WHITELIST }}
