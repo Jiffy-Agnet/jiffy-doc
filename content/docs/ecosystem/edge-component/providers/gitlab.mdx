@@ -1,0 +1,96 @@
+---
+title: GitLab
+description: Setting up the Edge Component on GitLab — the webhook relay, environment variables, and a worked example.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+## Overview
+
+This is the one provider where GitHub Actions/Gitea Actions' native mention-triggered job has no equivalent — **GitLab pipelines don't start on Issue activity at all**. The bridge is a small, stateless webhook relay you host yourself: GitLab delivers Issue and comment webhooks to it, and the relay does the mention check, thread collection, and forwarding in a single step.
+
+```
+GitLab webhook (Issues + Comments) ──▶ Relay ──▶ Gateway /api/gitlab/ingestion
+```
+
+There's no `.gitlab-ci.yml` job and no Pipeline Trigger Token involved — the relay talks to the Gateway directly over HTTP. It has no database and no queue, so it can run anywhere with network access to both GitLab and the Gateway: a small VM, a container, or a serverless function, ideally placed near your GitLab instance.
+
+<Callout type="warn">
+Because the relay owns the entire GitLab-side flow, if it's down every `@jiffy` mention on that project is silently ignored. Monitor its health.
+</Callout>
+
+## Setting up the relay
+
+<Steps>
+<Step>
+### Add the project webhook
+
+Under **Settings → Webhooks**, point a new webhook at your relay's endpoint (e.g. `https://relay.example.com/webhook`), set its Secret Token, and enable **Issues events** and **Comments**. Leave SSL verification on.
+</Step>
+
+<Step>
+### Run the relay
+
+The relay verifies the `X-Gitlab-Token` header, checks the issue or comment body for `@jiffy`, fetches the full thread via the GitLab API, and POSTs it to the Gateway:
+
+```python title="relay.py (excerpt)"
+def do_POST(self):
+    token = self.headers.get("X-Gitlab-Token", "")
+    if token != GITLAB_WEBHOOK_SECRET:
+        self.send_error(401, "Invalid webhook token")
+        return
+
+    data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+    # ... determine issue_iid and the mentioning text, skip if no "@jiffy" ...
+
+    # Fetch the issue + all notes via the GitLab API, join into one thread
+    payload = {
+        "repo": {"url": repo_url, "token": GITLAB_API_TOKEN, "username": author_login},
+        "issue": {"text": full_thread_text, "external_issue_id": str(issue_iid)},
+        "callback": {"url": callback_url, "secret": GITLAB_API_TOKEN},
+    }
+    requests.post(f"{JIFFY_GATEWAY_URL}/api/gitlab/ingestion", json=payload,
+                  headers={"X-JIFFY-TOKEN": JIFFY_INGEST_TOKEN})
+```
+
+A complete, ready-to-run version of this script (standard library plus `requests`, no other dependencies) is in the Gateway repository's [`docs/jiffy-gitlab-setup.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/docs/jiffy-gitlab-setup.md) — copy it directly and run it behind a process supervisor (systemd, supervisord, or a container with a restart policy).
+</Step>
+
+<Step>
+### Verify each stage in order
+
+Open a test Issue, comment `@jiffy`, then check three places in sequence — it isolates the failure immediately:
+
+- **The webhook** — Settings → Webhooks → Recent events shows the delivery and the response your relay sent.
+- **The relay's own logs** — did it detect the mention and attempt the request?
+- **The Gateway** — a request on `/api/gitlab/ingestion` and a queued task.
+</Step>
+</Steps>
+
+## Environment variables
+
+These are set on the relay process itself, not as GitLab CI/CD variables — there's no pipeline involved:
+
+| Variable | Description |
+|---|---|
+| `GITLAB_WEBHOOK_SECRET` | Compared against the incoming `X-Gitlab-Token` header |
+| `GITLAB_API_TOKEN` | GitLab PAT/project token with `read_api` + `write_repository`; also used as the callback secret and as the git provider token for pushing/opening the MR |
+| `CI_API_V4_URL` | e.g. `https://gitlab.com/api/v4`, or your self-managed instance's API URL |
+| `JIFFY_GATEWAY_URL` | Base URL of your Gateway |
+| `JIFFY_INGEST_TOKEN` | Must match `GITLAB_INGEST_TOKEN` on the Gateway |
+
+Keep all three credentials — the webhook secret, the API token, and the ingestion token — separate. They're never meant to be reused for each other, and rotating one doesn't affect the others.
+
+## Example: an Issue from mention to PR
+
+1. Someone opens an Issue, or comments on an existing one, with `@jiffy add a health-check endpoint that returns the service version`.
+2. GitLab delivers an Issue or Note webhook to your relay. The relay checks `X-Gitlab-Token`, then checks the body for `@jiffy`.
+3. If found, it fetches the issue description and every note via the GitLab API, joins them into one thread, and posts it to `/api/gitlab/ingestion` with `X-JIFFY-TOKEN` set to `JIFFY_INGEST_TOKEN`.
+4. The Gateway queues a task. A duplicate delivery for the same Issue gets `202 Accepted` with `{"status": "already_queued"}`.
+5. Once finished, the Agent pushes a branch and opens a Merge Request. The Gateway POSTs the summary to the GitLab Issue Notes API — the same thread where the task started.
+
+
+---
+
+If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.

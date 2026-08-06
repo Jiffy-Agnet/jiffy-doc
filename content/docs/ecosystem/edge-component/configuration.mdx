@@ -4,6 +4,7 @@ description: The two settings every Edge Component needs — the X-JIFFY-TOKEN i
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Configuring the Edge Component means three things, whichever provider you are on:
 
@@ -13,7 +14,7 @@ Configuring the Edge Component means three things, whichever provider you are on
 
 Nothing else needs to be configured. The Edge Component holds no other state.
 
-This page covers the concepts common to all three providers. The step-by-step instructions live on the [Providers](/docs/ecosystem/edge-component/providers) page, one fully detailed section per provider.
+This page covers the concepts common to all three providers. The step-by-step instructions live on their own pages under [Providers](#per-provider-setup) below.
 
 ## The two settings every provider needs
 
@@ -63,7 +64,13 @@ The concepts above are identical everywhere. What changes is how the automation 
 
 ## Per-provider setup
 
-See the [Providers](/docs/ecosystem/edge-component/providers) page for the full walkthrough per provider — the automation setup, how Issues register a task, and the complete environment configuration for GitHub, GitLab, and Gitea.
+Each provider has its own page with the full walkthrough — the automation setup, how Issues register a task, and the complete environment configuration:
+
+<Cards>
+  <Card title="GitHub" href="/docs/ecosystem/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and the GitHub ingestion route" />
+  <Card title="GitLab" href="/docs/ecosystem/edge-component/providers/gitlab" description="The webhook relay, environment variables, and the GitLab ingestion route" />
+  <Card title="Gitea" href="/docs/ecosystem/edge-component/providers/gitea" description="Gitea Actions, repository secrets, and the Gitea ingestion route" />
+</Cards>
 
 ## Rotating an ingestion secret
 

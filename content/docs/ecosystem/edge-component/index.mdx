@@ -4,6 +4,7 @@ description: What the Edge Component is, where it runs, and the place it occupie
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 The Edge Component is the first stage of the Jiffy pipeline and the only stage that knows anything about your git provider. It is a lightweight component that runs alongside each provider — a GitHub Action, a Gitea Action, or a webhook relay for GitLab — inside or next to the repository you want Jiffy to work on.
 
@@ -42,5 +43,12 @@ Each provider gets its own independently configured ingestion secret. A secret i
 
 - [Role](/docs/ecosystem/edge-component/role) — mention detection, thread collection, and the three Gateway ingestion routes it posts to.
 - [Configuration](/docs/ecosystem/edge-component/configuration) — per-provider setup, the `X-JIFFY-TOKEN` secret, and the Gateway endpoint URL.
-- [Providers](/docs/ecosystem/edge-component/providers) — the full setup walkthrough for GitHub, GitLab, and Gitea.
 - [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) — rejected requests, duplicate deliveries, and mentions that never fire.
+
+## Providers
+
+<Cards>
+  <Card title="GitHub" href="/docs/ecosystem/edge-component/providers/github" description="GitHub Actions, repository secrets and variables, and a worked example" />
+  <Card title="GitLab" href="/docs/ecosystem/edge-component/providers/gitlab" description="The webhook relay, environment variables, and a worked example" />
+  <Card title="Gitea" href="/docs/ecosystem/edge-component/providers/gitea" description="Gitea Actions, repository secrets, and a worked example" />
+</Cards>
