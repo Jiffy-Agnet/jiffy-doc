@@ -9,10 +9,10 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 The fastest way to get the Gateway running is a single command — no cloning, no manual dependency installs. It checks for `git`, `curl`, Docker, and the Compose plugin (installing anything that's missing), fetches the Gateway source, generates your `.env` (including fresh per-provider ingestion secrets), and brings up the stack with Docker Compose.
 
-Make sure you've gone through [Prerequisites](/docs/ecosystem/installation/prerequisites) first — you'll need a git provider token for whichever provider(s) you plan to connect. Model access works out of the box, with no key required unless you want to swap in a specific provider.
+Make sure you've gone through [Prerequisites](/docs/ecosystem/prerequisites) first — you'll need a git provider token for whichever provider(s) you plan to connect. Model access works out of the box, with no key required unless you want to swap in a specific provider.
 
 <Callout type="info">
-Prefer to see and control every step yourself? Follow [Manual Installation](/docs/ecosystem/installation/manual-installation) instead — it does the same thing without the script.
+Prefer to see and control every step yourself? Follow [Manual Installation](/docs/ecosystem/manual-installation) instead — it does the same thing without the script.
 </Callout>
 
 ## Run the installer
@@ -69,7 +69,7 @@ The sandbox image is built automatically on your first task, through the Docker 
 3. **Go to production** — when you're ready for a hardened, always-on deployment, follow [Deployment](/docs/ecosystem/deployment).
 
 <Cards>
-  <Card title="Manual Installation" href="/docs/ecosystem/installation/manual-installation" description="The same setup, step by step, without the script" />
+  <Card title="Manual Installation" href="/docs/ecosystem/manual-installation" description="The same setup, step by step, without the script" />
   <Card title="Deployment" href="/docs/ecosystem/deployment" description="Hardened production self-hosting: prod Compose, reverse proxy, TLS, and security checklist" />
-  <Card title="Uninstall" href="/docs/ecosystem/installation/uninstall" description="Stop the stack and revoke issued tokens" />
+  <Card title="Uninstall" href="/docs/ecosystem/uninstall" description="Stop the stack and revoke issued tokens" />
 </Cards>
