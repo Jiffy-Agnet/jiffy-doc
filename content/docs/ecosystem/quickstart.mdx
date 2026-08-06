@@ -50,11 +50,11 @@ If anything is left in `.env` that genuinely needs a value only you can provide 
 
 ```bash
 cd ~/jiffy-gateway
-curl -f http://localhost:8000/
+curl -f http://localhost:8080/
 docker compose -f compose.prod.yml logs -f celery
 ```
 
-The web container should respond on port `8000`, and the Celery worker should log that it connected to Redis and is listening on the `execute` queue.
+The web container should respond on port `8080` (the default `WEB_PORT`), and the Celery worker should log that it connected to Redis and is listening on the `execute` queue.
 </Step>
 </Steps>
 

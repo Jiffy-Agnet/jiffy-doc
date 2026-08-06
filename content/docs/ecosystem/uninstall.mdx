@@ -29,7 +29,7 @@ If you also want to reclaim disk space from the pulled/built images:
 
 ```bash
 docker rmi $(docker compose images -q)
-docker rmi jiffy-sandbox:1.1.1
+docker rmi jiffy-sandbox:1.2.0
 ```
 
 The sandbox image tag should match whatever `SANDBOX_IMAGE` was set to in your `.env`.

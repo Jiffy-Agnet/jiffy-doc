@@ -59,7 +59,7 @@ docker compose -f compose.prod.yml up -d
 
 This starts four containers on an internal Docker network:
 
-- `web` — the Django app, exposed on port `8000`
+- `web` — the Django app, exposed on port `8080` by default (`WEB_PORT` in `.env`)
 - `celery` — the task worker, listening on the `execute` queue
 - `redis` — the Celery broker
 - `docker-socket-proxy` (`tecnativa/docker-socket-proxy`) — a restricted proxy so `celery` can manage sandbox containers without raw access to the host's Docker socket
@@ -82,7 +82,7 @@ Each provider has its own ingestion route on the Gateway. Before wiring up a rea
 <Tab value="GitHub">
 
 ```bash
-curl -i -X POST http://localhost:8000/api/github/ingestion \
+curl -i -X POST http://localhost:8080/api/github/ingestion \
   -H "Content-Type: application/json" \
   -H "X-JIFFY-TOKEN: wrong-token" \
   -d '{}'
@@ -92,7 +92,7 @@ curl -i -X POST http://localhost:8000/api/github/ingestion \
 <Tab value="GitLab">
 
 ```bash
-curl -i -X POST http://localhost:8000/api/gitlab/ingestion \
+curl -i -X POST http://localhost:8080/api/gitlab/ingestion \
   -H "Content-Type: application/json" \
   -H "X-JIFFY-TOKEN: wrong-token" \
   -d '{}'
@@ -102,7 +102,7 @@ curl -i -X POST http://localhost:8000/api/gitlab/ingestion \
 <Tab value="Gitea">
 
 ```bash
-curl -i -X POST http://localhost:8000/api/gitea/ingestion \
+curl -i -X POST http://localhost:8080/api/gitea/ingestion \
   -H "Content-Type: application/json" \
   -H "X-JIFFY-TOKEN: wrong-token" \
   -d '{}'
@@ -114,7 +114,7 @@ curl -i -X POST http://localhost:8000/api/gitea/ingestion \
 Then confirm the Gateway is otherwise healthy:
 
 ```bash
-curl -f http://localhost:8000/
+curl -f http://localhost:8080/
 docker compose -f compose.prod.yml logs -f celery
 ```
 
