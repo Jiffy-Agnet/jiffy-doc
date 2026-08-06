@@ -1,6 +1,6 @@
 ---
 title: GitLab
-description: Setting up the Edge Component on GitLab — the webhook relay, environment variables, and a worked example.
+description: Setting up the Edge Component on GitLab — the webhook relay, its environment variables, and a worked example.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -89,8 +89,5 @@ Keep all three credentials — the webhook secret, the API token, and the ingest
 3. If found, it fetches the issue description and every note via the GitLab API, joins them into one thread, and posts it to `/api/gitlab/ingestion` with `X-JIFFY-TOKEN` set to `JIFFY_INGEST_TOKEN`.
 4. The Gateway queues a task. A duplicate delivery for the same Issue gets `202 Accepted` with `{"status": "already_queued"}`.
 5. Once finished, the Agent pushes a branch and opens a Merge Request. The Gateway POSTs the summary to the GitLab Issue Notes API — the same thread where the task started.
-
-
----
 
 If the relay runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.

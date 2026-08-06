@@ -1,6 +1,6 @@
 ---
 title: Gitea
-description: Setting up the Edge Component on Gitea — Action setup, environment variables, and a worked example.
+description: Setting up the Edge Component on Gitea — the Actions workflow, repository secrets, and a worked example.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -96,7 +96,5 @@ A complete working version of this workflow (issue and comment fetch, thread ass
 2. The workflow fires on `issue_comment`, confirms the `@jiffy` mention with a `contains()` check, then uses `curl` against the Gitea REST API to fetch the issue body and every comment.
 3. It joins them into one thread and posts it to `/api/gitea/ingestion` with `X-JIFFY-TOKEN` set to `JIFFY_GITEA_INGEST_TOKEN`. The Gateway queues a task.
 4. Once the Agent finishes, it pushes a branch and opens a Pull Request, and the Gateway posts the summary back as a comment on the same Issue, using `GITEA_ACCESS_TOKEN` to authenticate the callback.
-
----
 
 If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
