@@ -1,5 +1,0 @@
-{
-  "title": "Gitea",
-  "icon": "Server",
-  "pages": ["index", "setup-action", "issue-registration", "environment-setup"]
-}
