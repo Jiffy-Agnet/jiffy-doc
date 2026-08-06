@@ -1,11 +1,11 @@
 ---
 title: Prerequisites
-description: What you need before installing Jiffy — Docker, a git provider token, an OpenRouter API key, and minimum host resources.
+description: What you need before installing Jiffy — Docker, a git provider token, and minimum and recommended host resources.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Everything below is needed before you run the installer. None of it is Jiffy-specific infrastructure — it's the host, the container runtime, and the credentials the Gateway and sandbox need to reach your git provider and your model backend.
+Everything below is needed before you run the installer, except where noted as optional. None of it is Jiffy-specific infrastructure — it's the host, the container runtime, and the credentials the Gateway and sandbox need to reach your git provider.
 
 ## Docker
 
@@ -36,9 +36,13 @@ Jiffy needs a token with permission to push branches and open Pull/Merge Request
 Use a long-lived token, not a short-lived CI-provided one (like GitHub Actions' default `GITHUB_TOKEN`). Jiffy's push and PR happen asynchronously, after the triggering CI run has already ended.
 </Callout>
 
-## An OpenRouter API key
+## Model access (optional)
 
-The sandbox's coding agent (OpenCode) needs an LLM backend to run against. Jiffy uses [OpenRouter](https://openrouter.ai/) for model access — sign up and generate an API key, then set it as `OPENROUTER_API_KEY` when you configure the Gateway.
+The sandbox's coding agent (OpenCode) doesn't need a separate model credential to get started — it ships with free-tier model access built in, so there's nothing to sign up for before your first task.
+
+<Callout type="info">
+Want to use a specific provider instead of the built-in free models — Anthropic's Claude, for example? Add that provider's API key as an environment variable in your Gateway configuration (for Anthropic, that's typically `ANTHROPIC_API_KEY`). Once it's set, OpenCode will offer that provider's models in the sandbox alongside the free ones. See [OpenCode's provider docs](https://opencode.ai/docs/providers/) for the exact variable name each provider expects.
+</Callout>
 
 ## Minimum resource requirements
 
@@ -47,10 +51,24 @@ The sandbox's coding agent (OpenCode) needs an LLM backend to run against. Jiffy
 | CPU | 2 vCPU | 1 for the Gateway stack (web, worker, Redis), 1 free for a running sandbox |
 | Memory | 4 GB RAM | The sandbox image itself, plus whatever the task's toolchain (Node, Python, Go) needs at runtime |
 | Disk | 20 GB free | Docker images (Gateway, sandbox, Redis, proxy) plus room for cloned repositories per task |
-| Network | Outbound HTTPS | To your git provider, OpenRouter, and package registries the agent may need mid-task |
+| Network | Outbound HTTPS | To your git provider, your model provider (if you've configured one), and package registries the agent may need mid-task |
 
 <Callout type="info">
-These are minimums for evaluating Jiffy at low volume (its intended use — hundreds of tasks per day, not concurrent high-throughput automation). Add more CPU/RAM if you expect several sandboxes running at once.
+These are the floor, not a target — add more CPU and memory if you expect several sandboxes running at once. See Recommended resources below for a baseline that holds up better under everyday use.
+</Callout>
+
+## Recommended resources
+
+For running more than the bare minimum comfortably — several sandboxes at once, or repositories with heavier toolchains — this is a more realistic baseline:
+
+| Resource | Recommended | Notes |
+|---|---|---|
+| CPU | 4 vCPU | Headroom for the Gateway stack alongside two or more sandboxes running at the same time |
+| Memory | 8 GB RAM | Comfortable room for larger toolchains (e.g. Node, Python, and Go all installed at once) inside a running sandbox |
+| Disk | 50 GB free | More room for cloned repositories, dependency caches, and container image layers to accumulate over time |
+
+<Callout type="info">
+These aren't hard requirements, just a more comfortable baseline than the bare minimum. Scale further if your team runs many concurrent tasks or works with unusually large repositories.
 </Callout>
 
 Once these are in place, continue to [Installation](/docs/ecosystem/installation/quickstart) for the quick-start path, or [Manual Installation](/docs/ecosystem/installation/manual-installation) if you'd rather configure each piece by hand.
