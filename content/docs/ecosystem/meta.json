@@ -22,6 +22,8 @@
 
     "---Gateway---",
     "gateway/index",
+    "gateway/request-lifecycle",
+    "gateway/execution",
     "gateway/configuration",
 
     "---Code Agent---",
