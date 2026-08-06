@@ -14,8 +14,8 @@ Make sure you've read [Prerequisites](/docs/ecosystem/installation/prerequisites
 ## Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/javadib/jiffy_gateway.git
-cd jiffy_gateway
+git clone https://github.com/Jiffy-Agnet/gateway.git
+cd gateway
 ```
 
 ## Step 2 — Configure .env by hand
@@ -30,7 +30,6 @@ Open `.env` and set the following:
 | Variable | Value |
 |---|---|
 | `SECRET_KEY` | A random value — never keep the `change-me-in-production` default |
-| `OPENROUTER_API_KEY` | Your OpenRouter API key (see [Prerequisites](/docs/ecosystem/installation/prerequisites)) |
 | `REDIS_PASSWORD` | A strong password, or leave empty for local-only evaluation |
 | `GITHUB_INGEST_TOKEN` / `GITLAB_INGEST_TOKEN` / `GITEA_INGEST_TOKEN` | A random secret **per provider you plan to connect** — generate one for each with the command below |
 
@@ -42,6 +41,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Never reuse one secret across two providers — each is a separate shared secret checked against that provider's `X-JIFFY-TOKEN` header.
 
+<Callout type="info">
+There's nothing to set for model access — OpenCode ships with free-tier models built in. If you'd rather use a specific provider (Anthropic's Claude, for example), add that provider's API key to `.env` instead; see [Prerequisites → Model access](/docs/ecosystem/installation/prerequisites#model-access-optional).
+</Callout>
+
 <Callout type="warn">
 `.env` contains secrets and is excluded from version control. Never commit it, and never push real values to a repository.
 </Callout>
@@ -51,7 +54,7 @@ Never reuse one secret across two providers — each is a separate shared secret
 Bring the services up with Docker Compose directly:
 
 ```bash
-docker compose up -d
+docker compose -f compose.prod.yml up -d
 ```
 
 This starts four containers on an internal Docker network:
@@ -64,7 +67,7 @@ This starts four containers on an internal Docker network:
 If you'd rather start (or restart) a single service without touching the others — for example after editing `.env` — target it by name:
 
 ```bash
-docker compose up -d --no-deps web
+docker compose -f compose.prod.yml up -d --no-deps web
 ```
 
 <Callout type="info">
@@ -112,7 +115,7 @@ Then confirm the Gateway is otherwise healthy:
 
 ```bash
 curl -f http://localhost:8000/
-docker compose logs -f celery
+docker compose -f compose.prod.yml logs -f celery
 ```
 
 The Celery worker should log that it connected to Redis and is listening on the `execute` queue.
