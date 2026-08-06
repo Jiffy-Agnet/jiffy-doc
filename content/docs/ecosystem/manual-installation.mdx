@@ -7,9 +7,9 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
-This walks through the same setup as `install.sh` in [Installation](/docs/ecosystem/installation/quickstart), but with every step done by hand — useful if you want to see exactly what gets configured, or if you're integrating the Gateway into an existing deployment process.
+This walks through the same setup as `install.sh` in [Installation](/docs/ecosystem/quickstart), but with every step done by hand — useful if you want to see exactly what gets configured, or if you're integrating the Gateway into an existing deployment process.
 
-Make sure you've read [Prerequisites](/docs/ecosystem/installation/prerequisites) first.
+Make sure you've read [Prerequisites](/docs/ecosystem/prerequisites) first.
 
 ## Step 1 — Clone the repository
 
@@ -42,7 +42,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 Never reuse one secret across two providers — each is a separate shared secret checked against that provider's `X-JIFFY-TOKEN` header.
 
 <Callout type="info">
-There's nothing to set for model access — OpenCode ships with free-tier models built in. If you'd rather use a specific provider (Anthropic's Claude, for example), add that provider's API key to `.env` instead; see [Prerequisites → Model access](/docs/ecosystem/installation/prerequisites#model-access-optional).
+There's nothing to set for model access — OpenCode ships with free-tier models built in. If you'd rather use a specific provider (Anthropic's Claude, for example), add that provider's API key to `.env` instead; see [Prerequisites → Model access](/docs/ecosystem/prerequisites#model-access-optional).
 </Callout>
 
 <Callout type="warn">
