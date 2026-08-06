@@ -94,3 +94,9 @@ Turning `JIFFY_SANDBOX_NETWORK_RESTRICTED` off gives a model-driven agent unrest
 That configuration is written directly into each container at startup rather than mounted, which is what lets the Gateway's worker run inside a container itself. The image also carries a working default configuration pointed at OpenCode's built-in free-tier models, so the container starts successfully and the Agent has a model to work with even when nothing custom has been provided.
 
 Whatever endpoint that configuration points at needs to be reachable from inside the sandbox. If it is not one of the built-in allowlisted hosts, add it to `SANDBOX_NETWORK_ALLOWLIST_EXTRA`.
+
+## Read next
+
+- [Isolation Mechanisms](/docs/ecosystem/sandbox/isolation) — how these variables map onto the container boundary, resource limits, and egress restriction actually enforced.
+- [Container Lifecycle](/docs/ecosystem/sandbox/lifecycle) — where in the sequence these settings take effect.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — image problems, a blocked registry, and resource limit failures.
