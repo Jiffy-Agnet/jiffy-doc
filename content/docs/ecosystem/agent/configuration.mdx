@@ -1,5 +1,5 @@
 ---
-title: Configuration
+title: Runtime & Callback
 description: The sandbox environment the Agent depends on — language runtime managers, provider command-line tools, and the per-task callback_url and callback_secret pair.
 ---
 
@@ -50,19 +50,9 @@ If you'd rather use a specific provider — Anthropic's Claude, for example — 
 
 ## The per-task callback pair
 
-Two values arrive with every task and are valid only for that task:
+Two values arrive with every task and are valid only for that task: `callback_url` — the originating provider's own comment interface for the Issue that started the task — and `callback_secret`, the credential that report is authenticated with. Both are supplied per task rather than configured anywhere, and neither persists beyond the task that received them. The same pair is what the Gateway's fallback uses if the Agent's own attempt fails, which is why a failed attempt never loses the report.
 
-| Value | What it is |
-|---|---|
-| `callback_url` | The address the Agent posts its completion report to — the originating provider's own comment interface for the Issue that started the task |
-| `callback_secret` | The credential the Agent authenticates that report with |
-
-Two properties of this pair matter:
-
-- **It is dynamic, not fixed.** The `callback_url` is supplied per task and points at the provider, so there is no Gateway-owned route the Agent calls. A GitHub task, a GitLab task, and a Gitea task each receive a different `callback_url`.
-- **It is scoped to one task.** The pair is not a long-lived credential the Agent stores. It arrives with the task, is used once for the completion report, and disappears with the sandbox.
-
-The same pair is what the Gateway's fallback uses if the Agent's own attempt fails, which is why a failed attempt does not lose the report — see [Troubleshooting](/docs/ecosystem/troubleshooting/agent).
+See [How It Works](/docs/ecosystem/agent) for exactly how and when the Agent uses this pair during a task.
 
 <Callout type="info">
 Nothing about the callback needs to be configured per repository. It is derived by the Gateway from the provider the task came in on, using a declarative per-provider callback specification.

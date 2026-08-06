@@ -1,9 +1,10 @@
 ---
-title: Overview
-description: What the sandbox is — the isolated, disposable Docker container the Gateway starts for a single task, and why every task gets one of its own.
+title: How It's Isolated
+description: What the sandbox is and how it works — the disposable, isolated Docker container the Gateway starts for one task, the tooling it provides, and the isolation it enforces.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 The sandbox is the isolated Docker container the Gateway starts for one task and destroys when that task ends. It is where the Agent runs, where your repository is cloned, and where every command the Agent decides to run actually executes.
 
@@ -39,7 +40,7 @@ Every task gets a brand new container, and that container never serves a second 
 The container is torn down whether the task succeeded or failed. What survives is exactly what the Agent pushed to your git provider and what it reported back.
 
 <Callout type="info">
-Because the container is destroyed at the end, nothing inside it can be inspected after the fact. When you expect to need that, the Gateway's cleanup behavior can be turned off deliberately — see [Configuration](/docs/ecosystem/sandbox/configuration).
+Because the container is destroyed at the end, nothing inside it can be inspected after the fact. When you expect to need that, the Gateway's cleanup behavior can be turned off deliberately — see [Resource Limits & Network](/docs/ecosystem/sandbox/configuration).
 </Callout>
 
 ## One generic image, not one per language
@@ -60,8 +61,108 @@ The image is a Debian base carrying:
 - **It is not a virtual machine.** Isolation comes from the container boundary, its resource limits, and its egress restriction — not from a hypervisor.
 - **It is not something you interact with directly.** The Gateway starts it, the Agent works inside it, and it disappears. Configuring it means configuring the Gateway.
 
+## The life of one sandbox
+
+The sandbox has two jobs, and they pull in opposite directions. It has to be permissive enough that the Agent can genuinely build and test a real project, and restrictive enough that letting a model-driven agent run arbitrary commands is a reasonable thing to do. Everything about how the sandbox is built comes from balancing those two.
+
+<Steps>
+<Step>
+### It starts
+
+The Gateway starts a container from the configured image with the repository access token in its environment, a memory ceiling, and a pinned processor set. When restriction is active — the default — the container is also attached to a dedicated bridge network and granted the capability it needs to install its own firewall rules.
+
+On start the container prints a report of what it has: the versions of every runtime and tool, which user it is running as, whether the network is restricted, and the effective allowlist. That report is the single most useful thing to read when a task behaves unexpectedly.
+</Step>
+
+<Step>
+### Its egress is locked down
+
+Before anything else runs, the Gateway installs firewall rules inside the container. Loopback traffic is allowed, replies on already-established connections are allowed, name resolution through the container runtime's own resolver is allowed, and each allowlisted hostname is resolved so connections to its addresses can be permitted. Everything else is dropped.
+
+If those rules cannot be installed, the container is destroyed and the task fails. The sandbox is never allowed to run unrestricted just because the restriction step did not work.
+</Step>
+
+<Step>
+### The Agent's configuration is written in
+
+The OpenCode configuration is written directly into the container rather than mounted from the host. That sounds like a detail, but it is what allows the Gateway's worker to itself run inside a container: a mount would need a path the Docker engine can see on the host, and the configuration only exists inside the worker.
+</Step>
+
+<Step>
+### The repository is cloned into the workspace
+
+Your repository is cloned into `/workspace` using the access token that arrived with the task, and the working tree is explicitly moved onto `develop`. The Agent always begins from a known branch rather than whatever the remote happens to point at.
+</Step>
+
+<Step>
+### The Agent runs
+
+The Agent is started as a login shell inside `/workspace`, which is how it picks up the version managers on its path. Its output is redirected to the container's main output stream, so the container's own logs show the run live rather than only after it finishes.
+
+The Agent's window is bounded by the Docker client's request timeout — the command blocks on a single long request for its whole duration, so that timeout is what really decides how long a task may take. It defaults to one hour and is never less than fifteen minutes.
+</Step>
+
+<Step>
+### It is destroyed
+
+The container is stopped and removed regardless of the outcome, unless cleanup has been deliberately disabled. Nothing inside it survives.
+</Step>
+</Steps>
+
+## What the image provides
+
+The image ships version managers rather than pinned versions, so one image can serve repositories with entirely different requirements.
+
+| Tool | Purpose |
+|---|---|
+| `nvm` | Install and select a Node.js version at task time |
+| `uv` | Install a Python version and manage the project's dependencies |
+| `gvm` | Install and select a Go version |
+| `npm`, `pnpm` | Node.js package installation, with `pnpm` available through corepack |
+| `gh`, `glab`, `tea` | The GitHub, GitLab, and Gitea command-line tools, used to push and open Pull Requests |
+| `git`, `curl` | The basics |
+| `build-essential` | A compiler and make, so native dependencies build rather than failing at installation |
+| `iptables` | The firewall tooling the egress restriction uses |
+| `opencode` | The Agent itself |
+
+Working defaults for Node.js, Python, and Go are installed at build time and verified as part of the build, so a repository that does not pin a version still gets a functioning runtime immediately.
+
+<Callout type="info">
+Because versions are resolved from your repository rather than from the image, pinning them there — `.nvmrc`, `go.mod`, `pyproject.toml` — is the most reliable way to control which runtime the Agent ends up using.
+</Callout>
+
+One practical adjustment worth knowing about: the package manager configuration in the image raises the fetch timeout well above its default and lowers concurrency. Downloading large packages across a restricted, sometimes slow egress path was exceeding the default timeout and aborting installations that were otherwise fine.
+
+## The isolation that is actually enforced
+
+Three mechanisms do the real work.
+
+### The container boundary
+
+The Agent runs as a non-root user in its own filesystem, process, and network namespaces. It cannot see the Gateway, the other services, or anything on the host. The only way anything it produces leaves the container is a push to your git provider.
+
+### Resource limits
+
+Each container is started with a memory ceiling and a pinned processor set. This is not primarily about security — it is about one task being unable to starve the host or its neighbors. A runaway build in one sandbox does not take down the Gateway or slow every other task on the machine.
+
+### Egress restriction
+
+This is the mechanism most worth understanding, because it is the one you will occasionally need to adjust.
+
+Outbound connections are dropped by default. Allowlisted hostnames are resolved when the container starts, and connections to the resolved addresses are permitted. The built-in list covers the common package registries and the hosted git providers; anything else — your self-hosted git server, your model provider's endpoint — has to be added.
+
+<Callout type="warn">
+Hostnames are resolved once, at container start, and matched by address afterwards. A host that fails to resolve at that moment is simply unreachable for the whole task. This fails closed by design, but it does mean a name resolution blip during startup presents itself later as an unexplained connection failure.
+</Callout>
+
+Two limits are worth being honest about:
+
+- **Name resolution leaks.** Queries to the container runtime's resolver are always permitted so allowlisted hosts can be resolved at all. The Agent can therefore *resolve* a host that is not on the list — it simply cannot connect to it.
+- **Enforcement is version four only.** The rules cover IPv4. IPv6 is normally disabled on the bridge network in use; if you enable it, the equivalent IPv6 rules are not applied for you.
+
+Every run logs whether restriction was active and, when it was, the exact effective allowlist — in the Gateway's worker log and again in the container's own startup report.
+
 ## Read next
 
-- [Role](/docs/ecosystem/sandbox/role) — the tooling it provides, and the isolation it actually enforces.
-- [Configuration](/docs/ecosystem/sandbox/configuration) — the image tag, resource limits, cleanup, and the network allowlist.
+- [Resource Limits & Network](/docs/ecosystem/sandbox/configuration) — the image tag, resource limits, cleanup, and the network allowlist.
 - [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — image problems, a blocked registry, and resource limit failures.
