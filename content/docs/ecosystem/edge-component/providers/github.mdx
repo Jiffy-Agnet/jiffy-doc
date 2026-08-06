@@ -153,4 +153,4 @@ To rotate it: set a new value for `GITHUB_INGEST_TOKEN` on the Gateway and resta
 4. If you comment `@jiffy` again on the same Issue while that task is still running, the Gateway responds `202 Accepted` with `{"status": "already_queued"}` — expected, not an error.
 5. Once the Agent finishes, it pushes a branch and opens a Pull Request, and the Gateway posts a summary with a link to that PR back as a comment on the same Issue.
 
-If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
+If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component) for what each response means.

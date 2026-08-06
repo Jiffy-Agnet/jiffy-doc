@@ -34,7 +34,7 @@ Change `SANDBOX_IMAGE` to a tag that does not exist locally and the Gateway will
 Because it is a set rather than a count, `SANDBOX_CPU_LIMIT=4` does not mean four processors. It means processor number four, which will fail outright on a host that does not have one.
 </Callout>
 
-The memory ceiling is the limit most likely to need raising. One gigabyte is comfortable for most work and genuinely tight for large front-end dependency installations, which are also the case where exceeding it produces the most confusing symptom — see [Troubleshooting](/docs/submodules/sandbox/introduction/troubleshooting).
+The memory ceiling is the limit most likely to need raising. One gigabyte is comfortable for most work and genuinely tight for large front-end dependency installations, which are also the case where exceeding it produces the most confusing symptom — see [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox).
 
 ## Cleanup
 
@@ -91,6 +91,6 @@ Turning `JIFFY_SANDBOX_NETWORK_RESTRICTED` off gives a model-driven agent unrest
 |---|---|
 | `SANDBOX_OPENCODE_CONFIG_PATH` | Where the Gateway reads the OpenCode configuration from |
 
-That configuration is written directly into each container at startup rather than mounted, which is what lets the Gateway's worker run inside a container itself. The image also carries a minimal placeholder configuration, so the container starts successfully even when no real one has been provided — the Agent simply will not have a model to work with.
+That configuration is written directly into each container at startup rather than mounted, which is what lets the Gateway's worker run inside a container itself. The image also carries a working default configuration pointed at OpenCode's built-in free-tier models, so the container starts successfully and the Agent has a model to work with even when nothing custom has been provided.
 
 Whatever endpoint that configuration points at needs to be reachable from inside the sandbox. If it is not one of the built-in allowlisted hosts, add it to `SANDBOX_NETWORK_ALLOWLIST_EXTRA`.
