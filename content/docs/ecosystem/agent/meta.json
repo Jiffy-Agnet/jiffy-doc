@@ -1,5 +1,5 @@
 {
   "title": "Agent",
   "icon": "Bot",
-  "pages": ["index", "configuration"]
+  "pages": ["index", "lifecycle", "callback", "configuration"]
 }

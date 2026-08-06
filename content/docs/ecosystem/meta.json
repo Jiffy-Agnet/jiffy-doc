@@ -28,6 +28,8 @@
 
     "---Code Agent---",
     "agent/index",
+    "agent/lifecycle",
+    "agent/callback",
     "agent/configuration",
 
     "---Sandbox---",

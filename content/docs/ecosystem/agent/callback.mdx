@@ -1,0 +1,37 @@
+---
+title: Callback & Fallback
+description: The Agent's own completion callback attempt, what it reports, and how the Gateway's fallback takes over if that attempt fails.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The completion callback is the one part of the Agent's work that is deliberately not fixed infrastructure. It's the last thing the Agent does, at the end of the [in-sandbox lifecycle](/docs/ecosystem/agent/lifecycle).
+
+## The callback, in detail
+
+| Property | Detail |
+|---|---|
+| Destination | The task's `callback_url` — the originating provider's own comment interface |
+| Supplied | Per task, alongside the requirements |
+| Authentication | The task's `callback_secret` |
+| Fixed Gateway route | None. There is no Gateway-owned route the Agent calls |
+| First attempt | Made by the Agent itself, from inside the sandbox |
+| If the first attempt fails | The Gateway's fallback takes over and retries, up to 3 times |
+
+Because the destination is supplied per task rather than hardcoded, the same Agent reports to GitHub, GitLab, or Gitea without knowing which one it is talking to — the per-provider details are carried in the declarative callback specification the Gateway holds.
+
+<Callout type="info">
+The Agent attempting the callback first is what keeps the common path short: on success the report is posted directly from the sandbox, and the Gateway never has to get involved after queuing the task.
+</Callout>
+
+## Where the Gateway takes over
+
+If the Agent's own attempt does not succeed, the Gateway's fallback path runs the callback on its behalf, retrying up to 3 times using the same per-provider callback specification. The user-visible outcome is identical — a comment on the originating Issue with the summary and the Pull Request link. Only the sender differs.
+
+See [Troubleshooting](/docs/ecosystem/troubleshooting/agent) for what to check when a task completed but no comment appeared.
+
+## Read next
+
+- [In-Sandbox Lifecycle](/docs/ecosystem/agent/lifecycle) — everything that happens before this callback attempt.
+- [Runtime & Tools](/docs/ecosystem/agent/configuration) — language runtime managers, provider command-line tools, and the model backend.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/agent) — callback delivery failures, Pull Request creation failures, and how a failed task is reported.
