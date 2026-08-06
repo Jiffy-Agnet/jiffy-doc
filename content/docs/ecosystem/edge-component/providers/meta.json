@@ -1,5 +1,5 @@
 {
   "title": "Providers",
   "icon": "GitBranch",
-  "pages": ["github", "gitlab", "gitea"]
+  "pages": ["index", "github", "gitlab", "gitea"]
 }

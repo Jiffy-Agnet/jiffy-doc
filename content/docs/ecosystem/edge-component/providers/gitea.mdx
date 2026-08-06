@@ -1,0 +1,100 @@
+---
+title: Gitea
+description: Setting up the Edge Component on Gitea — the Actions workflow, repository secrets, and a worked example.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+## Overview
+
+Gitea Actions supports Issue and comment events natively, the same as GitHub — no relay needed. The one real difference is that Gitea Actions doesn't support GitHub's JavaScript-based `actions/*` steps (`actions/github-script` and friends don't run on a Gitea runner), so the workflow is written in plain `bash` + `curl` against the Gitea REST API instead.
+
+```
+  Issue or comment      ┌──────────────────────┐                     ┌───────────────────┐
+  mentioning @jiffy ──▶ │    Gitea Actions     │ ──────────────────▶ │      Gateway      │
+  on your repository    │  runs the workflow   │  POST               │  authenticates    │
+                        │  (bash + curl)       │  /api/gitea/        │  and queues       │
+                        └──────────────────────┘  ingestion          └───────────────────┘
+```
+
+## Setting up the Action
+
+<Steps>
+<Step>
+### Add the repository secrets
+
+Under **Settings → Actions → Secrets**:
+
+| Name | Value |
+|---|---|
+| `GITEA_ACCESS_TOKEN` | A Gitea token with `repo` + `issue` scope and a long expiry (1 year, or none) |
+| `JIFFY_GITEA_INGEST_TOKEN` | Must match `GITEA_INGEST_TOKEN` on the Gateway |
+| `JIFFY_GATEWAY_URL` | Base URL of your Gateway |
+</Step>
+
+<Step>
+### Add the workflow
+
+Create `.gitea/workflows/jiffy.yml` — note the `.gitea/` path, not `.github/`:
+
+```yaml title=".gitea/workflows/jiffy.yml"
+name: Jiffy Dispatch
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@jiffy')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@jiffy'))
+    steps:
+      - name: Collect thread and dispatch to Jiffy Gateway
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_ACCESS_TOKEN }}
+          JIFFY_URL: ${{ secrets.JIFFY_GATEWAY_URL }}
+          JIFFY_INGEST_TOKEN: ${{ secrets.JIFFY_GITEA_INGEST_TOKEN }}
+          GITEA_HOST: ${{ github.server_url }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          ISSUE_JSON=$(curl -s -H "Authorization: token $GITEA_TOKEN" \
+            "${GITEA_HOST}/api/v1/repos/${OWNER}/${REPO}/issues/${ISSUE_NUMBER}")
+          COMMENTS_JSON=$(curl -s -H "Authorization: token $GITEA_TOKEN" \
+            "${GITEA_HOST}/api/v1/repos/${OWNER}/${REPO}/issues/${ISSUE_NUMBER}/comments")
+          # Join issue body + all comment bodies with jq, build the payload,
+          # then POST it to $JIFFY_URL/api/gitea/ingestion with header
+          # X-JIFFY-TOKEN: $JIFFY_INGEST_TOKEN
+```
+
+Two Gitea-specific things worth knowing: `github.server_url` resolves to your Gitea instance's own URL (a compatibility feature, not a bug), and every secret needs to go through `env:` rather than being interpolated directly into a `run:` shell string — Gitea masks `env:`-sourced secrets in logs, but raw `${{ }}` interpolation into a shell command can still leak a value via error output.
+
+A complete working version of this workflow (issue and comment fetch, thread assembly with `jq`, and dispatch) is in the Gateway repository's [`docs/gitea_setup.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/docs/gitea_setup.md) — copy it directly into `.gitea/workflows/jiffy.yml`.
+</Step>
+</Steps>
+
+## Environment variables
+
+| Variable | Stored on | Sensitive |
+|---|---|---|
+| `GITEA_ACCESS_TOKEN` | Repository secret | Yes |
+| `JIFFY_GITEA_INGEST_TOKEN` | Repository secret | Yes |
+| `JIFFY_GATEWAY_URL` | Repository secret | No, but stored as a secret here since Gitea Actions has no separate variables tab in older versions |
+
+`GITEA_ACCESS_TOKEN` does double duty: it reads the Issue thread through the Gitea API, and it's the same token the Agent later uses to push the branch and open the Pull Request — which is exactly why it needs a long expiry rather than a short-lived one.
+
+## Example: an Issue from mention to PR
+
+1. Someone opens an Issue, or comments on an existing one, with `@jiffy add a health-check endpoint that returns the service version`.
+2. The workflow fires on `issue_comment`, confirms the `@jiffy` mention with a `contains()` check, then uses `curl` against the Gitea REST API to fetch the issue body and every comment.
+3. It joins them into one thread and posts it to `/api/gitea/ingestion` with `X-JIFFY-TOKEN` set to `JIFFY_GITEA_INGEST_TOKEN`. The Gateway queues a task.
+4. Once the Agent finishes, it pushes a branch and opens a Pull Request, and the Gateway posts the summary back as a comment on the same Issue, using `GITEA_ACCESS_TOKEN` to authenticate the callback.
+
+If the workflow runs but nothing reaches the Gateway, see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting) for what each response means.
