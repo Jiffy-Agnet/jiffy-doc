@@ -1,6 +1,6 @@
 ---
 title: Features
-description: Key capabilities of the Jiffy platform — multi-provider support, isolated execution, automated PR delivery, and a thin, extensible Gateway.
+description: Key capabilities of the Jiffy platform — multi-provider support, isolated execution, concurrent task handling, a model-agnostic agent, automated PR delivery, and a thin, extensible Gateway.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -15,9 +15,23 @@ Jiffy treats GitHub, GitLab, and Gitea as first-class, interchangeable entry poi
 
 ## Isolated sandbox execution
 
-Every task runs in its own ephemeral Docker container — a Debian bookworm image with the language toolchains (`nvm`, `uv`, `gvm`) and provider CLIs (`gh`, `glab`, `tea`) the agent might need. The container works against an isolated copy of the repository, and is torn down once the task finishes.
+Every task runs in its own ephemeral container — a preconfigured image with the language toolchains and provider command-line tools the agent might need. The container works against an isolated copy of the repository, and is torn down once the task finishes.
 
-The Gateway's worker never touches the host's Docker socket directly. A **Docker Socket Proxy** (`tecnativa/docker-socket-proxy`) sits in between and exposes only the specific Docker API operations the worker needs — so a misbehaving or compromised task can't reach anything else on the host.
+The Gateway's worker never touches the host's container runtime directly. A proxy layer sits in between and exposes only the specific operations the worker needs — so a misbehaving or compromised task can't reach anything else on the host.
+
+## Concurrent task execution
+
+Jiffy doesn't process tasks one at a time. The Gateway places incoming tasks on a queue and dispatches them across a pool of workers, so multiple `@jiffy` mentions — even across different repositories or different providers — can be running in their own sandbox at the same time. A long-running task on one repository doesn't block a quick one queued right after it.
+
+Each concurrent task gets its own ephemeral container and its own copy of the target repository, so tasks never share sandbox state, even when two tasks touch the same codebase at once. How many workers run concurrently is a configuration setting rather than a fixed limit, so a team can scale it up for a busier Issue tracker or keep it minimal for lighter workloads.
+
+## Model-agnostic coding agent
+
+The coding agent that runs inside the sandbox isn't wired to one specific AI provider or model. Which large language model powers it is a configuration choice, set once rather than hardcoded into the pipeline.
+
+- Teams can point Jiffy at whichever model fits their needs — a hosted API, a self-hosted model, or a mix across different environments.
+- Upgrading to a newer or stronger model, or moving off a provider entirely, doesn't require any change to the Edge Component, the Gateway, or how Pull Requests get created and reported.
+- Model choice can vary by environment — for example, a faster and cheaper model for routine tasks and a stronger one reserved for harder ones, if a team chooses to set it up that way.
 
 ## Automated PR delivery
 
@@ -25,7 +39,7 @@ The agent doesn't just write code — it finishes the job. It commits its change
 
 ## Thin-Gateway design
 
-The Gateway's job is deliberately narrow: authenticate a request, queue it, run it in a sandbox, and report back. All provider-specific logic — detecting a mention, assembling the Issue thread, formatting the callback — lives in the Edge Component, not the Gateway. That keeps the Gateway simple to run and reason about (Django + Celery + Redis + SQLite), and keeps provider quirks from leaking into the core pipeline.
+The Gateway's job is deliberately narrow: authenticate a request, queue it, run it in a sandbox, and report back. All provider-specific logic — detecting a mention, assembling the Issue thread, formatting the callback — lives in the Edge Component, not the Gateway. That keeps the Gateway simple to run and reason about, and keeps provider quirks from leaking into the core pipeline.
 
 <Callout type="info">
 This split is what makes multi-provider support possible without multiplying the Gateway's complexity — adding a provider means writing an Edge Component against the existing ingestion contract, not extending the Gateway itself.
