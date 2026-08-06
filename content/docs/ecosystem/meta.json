@@ -26,12 +26,10 @@
 
     "---Code Agent---",
     "agent/index",
-    "agent/role",
     "agent/configuration",
 
     "---Sandbox---",
     "sandbox/index",
-    "sandbox/role",
     "sandbox/configuration",
 
     "---Deployment---",
