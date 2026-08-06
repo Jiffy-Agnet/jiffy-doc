@@ -26,7 +26,7 @@ If it wasn't, the Edge Component stops right there — no request is ever sent, 
 <Step>
 ### 2. Gateway — authenticate and queue
 
-The payload is sent over HTTPS to the Gateway's provider-specific ingestion endpoint, authenticated with a shared secret in the `X-JIFFY-TOKEN` header — one secret per provider, so a leaked GitHub token can't be used to submit fake GitLab tasks. The Gateway (Django, with Celery and Redis for the task queue, SQLite by default) validates the payload, records the task, and queues it for the next free worker.
+The payload is sent over HTTPS to the Gateway's provider-specific ingestion endpoint, authenticated with a shared secret in the `X-JIFFY-TOKEN` header — one secret per provider, so a leaked GitHub token can't be used to submit fake GitLab tasks. The Gateway validates the payload, records the task in durable storage, and places it on an internal task queue for the next free worker.
 
 This is the only piece of Jiffy that's always running and always reachable from the outside — everything downstream of it only runs for the duration of a single task.
 </Step>
@@ -34,9 +34,9 @@ This is the only piece of Jiffy that's always running and always reachable from 
 <Step>
 ### 3. Sandbox — execute in isolation
 
-A Celery worker picks up the task and starts an ephemeral Docker container against an isolated copy of the target repository. The sandbox is a Debian bookworm image preloaded with the language toolchains a task might need (`nvm`, `uv`, `gvm`) and each provider's CLI (`gh`, `glab`, `tea`) for cloning, committing, and opening the PR. Inside it, the **OpenCode** coding agent reads the Issue thread, makes the change, and commits it.
+A worker process picks up the task and starts an ephemeral, isolated container against a copy of the target repository. The sandbox image comes preloaded with the language toolchains a task might need and each provider's command-line tools for cloning, committing, and opening the PR. Inside it, the coding agent reads the Issue thread, makes the change, and commits it.
 
-The worker never talks to the host's Docker daemon directly — a Docker Socket Proxy sits in between and only allows the specific operations the worker needs (create/start/stop a container, stream its logs), so a compromised task can't reach anything else running on the host.
+The worker never talks to the host's container runtime directly — a proxy layer sits in between and only allows the specific operations the worker needs (create/start/stop a container, stream its logs), so a compromised task can't reach anything else running on the host.
 </Step>
 
 <Step>
@@ -56,6 +56,6 @@ Every stage after the Edge Component is provider-agnostic. Adding a new channel 
 |---|---|---|
 | Edge Component | Your git provider's CI (or a small relay process, for GitLab) | Per event — starts, checks for a mention, exits |
 | Gateway | Your own infrastructure, always on | Long-running |
-| Sandbox | A Docker container spawned by the Gateway's worker | Per task — created, runs, torn down |
+| Sandbox | An isolated container spawned by the Gateway's worker | Per task — created, runs, torn down |
 
 For a deeper look at any one piece, see the [Submodules](/docs/submodules) docs — [Edge Component](/docs/submodules/edge-component), [Gateway](/docs/submodules/gateway), [Agent](/docs/submodules/agent), and [Sandbox](/docs/submodules/sandbox).

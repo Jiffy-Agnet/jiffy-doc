@@ -3,7 +3,6 @@ title: Welcome to Jiffy
 description: What Jiffy is, the problem it solves, and who it's for.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Jiffy is an open-source, **self-hosted autonomous software engineering platform**. Mention `@jiffy` on an Issue in your GitHub, GitLab, or Gitea repository, and Jiffy turns that request into a reviewed **Pull Request** — cloned, coded, committed, pushed, and opened — without anyone on your team touching a terminal.
@@ -12,11 +11,7 @@ Jiffy is an open-source, **self-hosted autonomous software engineering platform*
 
 Small, well-scoped engineering tasks — a bug fix, a missing test, a rate-limit tweak, a docs update — are exactly the kind of work that's easy to describe but tedious to context-switch into. Generic CI bots can run checks and linters, but they can't read an Issue thread and write the code. Hosted AI coding assistants can write the code, but they typically mean sending your source and your task descriptions to someone else's platform, and they run wherever that vendor decides to run them.
 
-Jiffy is built to close that gap **on your own infrastructure**: your code and your Issue threads never leave your network unless you configure them to, and the agent that writes the code runs in a Docker sandbox you control.
-
-<Callout type="info">
-Jiffy is designed for low request volumes — hundreds of tasks per day — not massive-scale load. Its job is to be a dependable, low-overhead way for a team to hand off clearly-scoped development work.
-</Callout>
+Jiffy is built to close that gap **on your own infrastructure**: your code and your Issue threads never leave your network unless you configure them to, and the agent that writes the code runs in an isolated sandbox you control.
 
 ## Who it's for
 
