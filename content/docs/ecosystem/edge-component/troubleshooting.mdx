@@ -14,7 +14,7 @@ Almost every Edge Component problem falls into one of four categories. The faste
 | `401` or `403` from the Gateway | The `X-JIFFY-TOKEN` header was missing, empty, or did not match the secret for that route | Edge Component secret, or Gateway configuration |
 | `400` from the Gateway | The payload was malformed or missing required fields | Edge Component payload construction |
 | `202 Accepted` with `{"status": "already_queued"}` | A duplicate delivery for an Issue that already has a task in flight | Nothing — this is expected behavior |
-| No request at all | The mention was never detected, or the workflow never ran | Edge Component trigger or mention detection |
+| No request at all | The mention was never detected, or the workflow/relay never ran | Edge Component trigger or mention detection |
 
 ## Missing or invalid token (401 / 403)
 
@@ -22,14 +22,14 @@ The Gateway rejects the request before doing anything else when the `X-JIFFY-TOK
 
 Common causes, in the order worth checking:
 
-- **The secret is not set at all.** The workflow runs, the header is sent empty, and the Gateway rejects it. Confirm that `JIFFY_INGEST_TOKEN` exists in the repository or project secrets and is exposed to the job that needs it.
+- **The secret is not set at all.** The workflow or relay runs, the header is sent empty, and the Gateway rejects it. Confirm that the ingestion secret exists in the repository/project secrets (or the relay's environment) and is exposed to the process that needs it.
 - **The wrong provider's secret is in use.** Secrets are never shared across providers. A GitHub Action configured with the GitLab secret is rejected even though the secret itself is perfectly valid — it is just not valid on `/api/github/ingestion`.
 - **The workflow posts to the wrong route.** Sending a GitHub payload to `/api/gitlab/ingestion` causes the Gateway to validate against the GitLab secret, which fails for the same reason.
 - **The secret was rotated on one side only.** After changing the value on the Gateway, every repository using that provider must be updated too.
 - **Whitespace in the stored value.** A trailing newline pasted into the secret field is a different string. Re-enter the value rather than editing it in place.
 
 <Callout type="warn">
-Never echo the token in workflow logs while debugging — including indirectly, by printing the whole request. Compare lengths or fingerprints instead of values.
+Never echo the token in workflow or relay logs while debugging — including indirectly, by printing the whole request. Compare lengths or fingerprints instead of values.
 </Callout>
 
 ## Malformed payload (400)
@@ -72,19 +72,19 @@ If a task really is stuck and a new one legitimately needs to run for the same I
 
 ## Mention not detected
 
-If nothing at all appears in the Gateway logs, the request was never sent. Work outward from the workflow:
+If nothing at all appears in the Gateway logs, the request was never sent. Work outward from the workflow or relay:
 
 <Callout type="info">
-Start by confirming the workflow ran at all. If there is no run recorded for the event, the problem is the trigger, not the mention detection.
+Start by confirming the workflow ran at all, or that the relay received a webhook delivery. If there's no run and no delivery, the problem is the trigger, not the mention detection.
 </Callout>
 
-**The workflow never ran:**
+**The workflow or relay never ran:**
 
 - The trigger does not include comment events. Mentions posted as follow-up comments require the comment event, not just the Issue-opened event.
 - Actions are disabled for the repository, or no runner is registered and online — a common cause on self-hosted Gitea.
-- On GitLab, the project webhook is not configured to deliver Issue and comment events, so no pipeline is triggered.
+- On GitLab, the project webhook is not configured to deliver Issue and comment events, so the relay never receives anything to check.
 
-**The workflow ran but exited early:**
+**The workflow or relay ran but exited early:**
 
 - The mention is spelled differently from the configured mention. Mention matching is exact.
 - The mention appears inside a fenced code block or a quoted reply, where it is deliberately not treated as an instruction.
