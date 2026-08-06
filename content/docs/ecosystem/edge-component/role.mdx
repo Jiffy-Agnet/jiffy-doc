@@ -67,7 +67,7 @@ Once a payload is authenticated, the Gateway checks whether a task is already in
 - **New Issue** — the Gateway records the task and queues it for the next free Celery worker.
 - **Duplicate delivery for the same Issue** — the Gateway responds `202 Accepted` with the body `{"status": "already_queued"}` and does **not** queue a second task.
 
-Both outcomes are successful responses from the Edge Component's point of view. A duplicate delivery is not an error condition and requires no retry — see [Troubleshooting](/docs/ecosystem/edge-component/troubleshooting).
+Both outcomes are successful responses from the Edge Component's point of view. A duplicate delivery is not an error condition and requires no retry — see [Troubleshooting](/docs/ecosystem/troubleshooting/edge-component).
 
 <Callout type="info">
 Deduplication is owned entirely by the Gateway, not the Edge Component. The Edge Component is stateless by design and has no way to know whether an Issue already has a task running.

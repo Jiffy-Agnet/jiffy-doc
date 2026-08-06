@@ -22,7 +22,6 @@
 
     "---Gateway---",
     "gateway/index",
-    "gateway/role",
     "gateway/configuration",
 
     "---Code Agent---",

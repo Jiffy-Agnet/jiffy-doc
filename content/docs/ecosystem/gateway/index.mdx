@@ -1,9 +1,10 @@
 ---
 title: What It Does
-description: What the Gateway is — the thin, central coordinator that verifies incoming requests, queues tasks, provisions the sandbox, and makes sure the result gets reported back.
+description: What the Gateway is and how it works — verifying requests, deduplicating, moving a task through its lifecycle, provisioning the sandbox, and reporting the result back.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 The Gateway is the middle of the Jiffy pipeline and the only piece that is always running. It is a Django application backed by Celery, Redis, and SQLite, and its job is to take a verified request that the Edge Component forwarded and turn it into a real, tracked, executed task.
 
@@ -14,24 +15,24 @@ What makes the Gateway pleasant to reason about is how little it actually does. 
 ```
   ┌──────────────────┐   verified payload   ┌───────────────────────────────────┐
   │   Edge Component   │ ────────────────▶ │            Gateway            │
-  │  GitHub Action /   │   X-JIFFY-TOKEN      │  Django  — three ingestion    │
-  │  GitLab relay /    │                      │            routes             │
-  │  Gitea Action      │                      │  Redis   — locks and payloads │
-  └──────────────────┘                      │  SQLite  — the Task record    │
-                                              │  Celery  — the execute queue  │
-                                              └───────────────┬───────────────┘
-                                                              │ starts, then steps back
-                                                              ▼
-                                              ┌───────────────────────────────────┐
-                                              │            Sandbox            │
-                                              │   isolated Docker container   │
-                                              │   the Agent runs inside it    │
-                                              └───────────────┬───────────────┘
-                                                              │ the Agent's own
-                                                              │ callback attempt
-                                                              ▼
-                                                        callback_url
-                                              (the provider's comment interface)
+  │  GitHub Action /   │   X-JIFFY-TOKEN       │  Django  — three ingestion    │
+  │  GitLab relay /    │                       │            routes             │
+  │  Gitea Action      │                       │  Redis   — locks and payloads │
+  └──────────────────┘                       │  SQLite  — the Task record    │
+                                                │  Celery  — the execute queue  │
+                                                └───────────────┬───────────────┘
+                                                                │ starts, then steps back
+                                                                ▼
+                                                ┌───────────────────────────────────┐
+                                                │            Sandbox            │
+                                                │   isolated Docker container   │
+                                                │   the Agent runs inside it    │
+                                                └───────────────┬───────────────┘
+                                                                │ the Agent's own
+                                                                │ callback attempt
+                                                                ▼
+                                                          callback_url
+                                                (the provider's comment interface)
 ```
 
 The Gateway only re-enters the picture at the very end, and only if the Agent's own report did not get through.
@@ -62,8 +63,142 @@ The Gateway's neutrality is what makes new providers cheap. A provider is descri
 
 Each provider posts to its own route, protected by its own independently configured secret. A secret valid on one route is rejected on the other two, so a leaked GitHub secret cannot be used to submit work through the GitLab or Gitea route. See [Environment Variables](/docs/ecosystem/gateway/configuration) for the full list of ingestion secrets and what each one protects.
 
+## How it works
+
+The Gateway's work splits cleanly in two. The first half happens inside a single web request and finishes in milliseconds. The second half happens in a Celery worker and can run for the better part of an hour. Understanding where the boundary is makes almost every Gateway question easy to answer.
+
+### Half one: the ingestion request
+
+<Steps>
+<Step>
+#### Verify the token
+
+Every ingestion route reads the `X-JIFFY-TOKEN` header and compares it against the secret configured for that route — `GITHUB_INGEST_TOKEN`, `GITLAB_INGEST_TOKEN`, or `GITEA_INGEST_TOKEN`. The comparison is a constant-time one, so a wrong token gives nothing away by how long it takes to be rejected.
+
+A missing header, an empty header, or a route whose secret is not configured at all all end the same way: `401 Unauthorized`. Nothing is written, and no task exists.
+</Step>
+
+<Step>
+#### Validate the payload
+
+The body is parsed as JavaScript Object Notation and run through the ingestion serializer. The payload has to carry three objects:
+
+| Object | What it holds |
+|---|---|
+| `repo` | The repository address, the access token used for cloning and pushing, and a username where the provider requires one |
+| `issue` | The external Issue identifier, plus either the ordered `turns` array or the legacy flat `text` |
+| `callback` | The `url` the report goes to and the `secret` it is authenticated with |
+
+Anything malformed or incomplete gets `400 Bad Request` with the specific field errors. Again, no task is created.
+</Step>
+
+<Step>
+#### Deduplicate against the Issue lock
+
+Before anything is written, the Gateway tries to take a lock in Redis keyed on the provider and the external Issue identifier:
+
+```
+jiffy:lock:issue:{provider}:{external_issue_id}
+```
+
+The lock is set only if it does not already exist, and it expires on its own after **five minutes**. If the lock could not be taken, a task for that Issue is already in flight and the Gateway answers:
+
+```http
+HTTP/1.1 202 Accepted
+
+{"status": "already_queued"}
+```
+
+This is the mechanism that stops one Issue from producing two sandboxes, two branches, and two competing Pull Requests when a comment is edited or a delivery is retried.
+</Step>
+
+<Step>
+#### Record the task and stash the payload
+
+Inside a single database transaction the Gateway creates the `Task` row — provider, repository address, external Issue identifier, callback address, callback secret, a status of `queued`, and the Celery identifier it is about to dispatch under.
+
+The full validated payload is too large and too sensitive to sit in the row, so it goes into Redis under `jiffy:task:{task_id}:payload` with a **four hour** lifetime. That lifetime is the real outer bound on how long a queued task can wait before it becomes unrunnable.
+</Step>
+
+<Step>
+#### Dispatch, and answer
+
+The Celery task is dispatched only once the transaction commits, so a worker can never pick up a task whose row is not visible yet. The Gateway then answers the Edge Component:
+
+```http
+HTTP/1.1 202 Accepted
+
+{"task_id": 42, "status": "queued"}
+```
+
+The web request is over. Everything from here happens in a worker.
+</Step>
+</Steps>
+
+### The task lifecycle
+
+The `Task` model defines seven statuses. Five of them are the ordinary path a healthy task walks, one is the terminal failure, and one is defined but not currently assigned by the execution code:
+
+| Status | Set when | Notes |
+|---|---|---|
+| `queued` | The task row is created during ingestion | Also the status the worker looks for at startup when recovering orphaned tasks |
+| `provisioning` | Just before the sandbox container is started | The sandbox image has already been confirmed or built by this point |
+| `cloning` | The container is up and the repository is being cloned into it | Includes fetching and checking out `develop` |
+| `running` | The Agent has been handed its instructions | The long one — this is where nearly all of a task's wall clock time is spent |
+| `reporting` | *Not currently assigned* | Defined in the model as a reserved state; reporting happens inside the transition out of `running` |
+| `done` | The Agent reported success and the callback was handled | The Pull Request address, branch name, and detected language are written to the row first |
+| `failed` | Anything went wrong, at any point | The reason is stored on the row in `error_message` |
+
+<Callout type="info">
+Because `reporting` is never assigned today, a task you observe is always sitting at `queued`, `provisioning`, `cloning`, `running`, `done`, or `failed`. Seeing which one tells you immediately which stage to investigate — see [Troubleshooting](/docs/ecosystem/troubleshooting/gateway).
+</Callout>
+
+### Half two: provisioning and execution
+
+The worker picks up the task and does five things in order.
+
+**It loads the payload back from Redis.** If the four hour lifetime has already elapsed, the task fails immediately with a clear message rather than running against an empty request.
+
+**It makes sure the sandbox image exists.** The configured `SANDBOX_IMAGE` is looked up locally. If it is already present this is nearly free. If it is missing, the Gateway builds it from the sandbox Dockerfile that ships with the repository and tags it. Both paths are logged with the elapsed time, so you can tell a slow first run from a slow every run.
+
+**It starts the container.** The status moves to `provisioning` and the container comes up with its memory limit, its pinned processor, and the repository access token in its environment. When network restriction is active — which is the default — the container is attached to a dedicated bridge network, granted the network administration capability, and has its egress rules applied before anything else runs.
+
+<Callout type="warn">
+Provisioning fails closed. If the egress rules cannot be applied, the container is torn down and the task fails. A sandbox is never quietly allowed to run with unrestricted network access because the restriction step did not work.
+</Callout>
+
+**It clones the repository.** The status moves to `cloning`. The access token is injected into the clone address in the format that provider expects, the repository lands in the container's workspace, and the working tree is explicitly moved onto `develop` — the Agent always starts from a known branch rather than whatever the remote happens to point its default at.
+
+**It hands off to the Agent.** The status moves to `running`, the instructions are written into the container, and the Agent is started. From here the Gateway is simply waiting. When the Agent finishes it leaves a structured result file behind in the workspace, which the Gateway reads to learn whether the run succeeded, which branch was pushed, whether a Pull Request was opened, and — importantly — whether the Agent managed to deliver its own callback.
+
+Whatever the outcome, the container is stopped and removed on the way out, unless cleanup has been deliberately turned off for debugging.
+
+### The callback, and the fallback
+
+Reporting is intentionally the Agent's job first. The Agent makes exactly one attempt from inside the sandbox, and records the outcome in its result file as an `attempted` and `succeeded` pair.
+
+The Gateway reads that pair and decides:
+
+| What the Agent recorded | What the Gateway does |
+|---|---|
+| Attempted, and succeeded | Nothing. The report is already posted; it logs that it is skipping |
+| Attempted, but failed | Sends the report itself |
+| Never attempted | Sends the report itself |
+| No usable result file at all | Treats the task as failed and sends the failure report itself |
+
+When the Gateway does send, it builds the request from the same declarative per-provider callback specification the Agent was given — same method, same authentication header, same content type, same body shape. It then retries up to **three times**, waiting two seconds between attempts, with a thirty second timeout on each request. If all three fail, it logs the exhaustion together with the callback address and the status it was trying to report.
+
+<Callout type="info">
+Two different retry counts live near each other and are easy to confuse. Three is the number of *callback delivery* attempts. Separately, the Celery task itself is registered with up to three retries and a sixty second delay, which only apply to genuinely unexpected internal errors — not to a task that failed for a reason the Gateway understood.
+</Callout>
+
+### Recovery at worker startup
+
+When a Celery worker becomes ready, it looks for any task still sitting at `queued` and dispatches it again. This covers the case where both the broker and the worker were restarted — a host reboot, for instance — and the broker lost messages that were never acknowledged.
+
+For the ordinary case of a worker simply dying mid-task, the recovery is handled at the broker level instead: tasks are acknowledged late and rejected when a worker is lost, so the broker redelivers them without the Gateway needing to do anything.
+
 ## Read next
 
-- [Request Lifecycle](/docs/ecosystem/gateway/role) — verification, deduplication, the task lifecycle, sandbox provisioning, and the callback fallback.
 - [Environment Variables](/docs/ecosystem/gateway/configuration) — the environment variables that control ingestion secrets, the sandbox image, resource limits, cleanup, the network allowlist, and the Docker connection.
-- [Diagnosing by Status](/docs/ecosystem/gateway/troubleshooting) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.
+- [Troubleshooting](/docs/ecosystem/troubleshooting/gateway) — tasks stuck at a status, provisioning failures, and callbacks that never arrive.
