@@ -1,45 +1,44 @@
 # jiffy-doc
 
-This is a Next.js application generated with
-[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
+Documentation site for **Jiffy**, the self-hosted autonomous software engineering
+platform. Mention `@jiffy` on an Issue in your GitHub, GitLab, or Gitea
+repository and Jiffy turns that request into a reviewed Pull Request.
 
-Run development server:
+This site is built with [Next.js](https://nextjs.org) and
+[Fumadocs](https://fumadocs.dev), and documents the Jiffy ecosystem end to end:
+the **Edge Component** that watches for `@jiffy` mentions, the **Gateway** that
+authenticates and queues tasks, the **Agent/Sandbox** that executes them in an
+isolated container, and the callback that reports the PR back on the Issue
+thread.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
+pnpm install       # install dependencies
+pnpm dev           # run the development server on http://localhost:3000
+pnpm build         # production build
+pnpm lint          # lint with ESLint
+pnpm types:check   # type-check with TypeScript (includes Next.js typegen)
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+## Project layout
 
-## Explore
+- `content/` — the MDX source for the documentation pages (organized under
+  `content/docs/ecosystem/`).
+- `lib/source.ts` — the Fumadocs content source adapter ([`loader()`](https://fumadocs.dev/docs/headless/source-api)), which exposes the docs content to the app.
+- `app/(home)/` — the landing page route group.
+- `app/docs/` — the documentation layout and pages.
+- `app/api/search/route.ts` — the search Route Handler.
 
-In the project, you can see:
+## Documentation work tracking
 
-- `lib/source.ts`: Code for content source adapter, [`loader()`](https://fumadocs.dev/docs/headless/source-api) provides the interface to access your content.
-- `lib/layout.shared.tsx`: Shared options for layouts, optional but preferred to keep.
+Documentation work for this repository is tracked in `ROADMAP.md`. Each item
+has a short ID (`R#`); when an Issue includes a `Roadmap item: R#` line,
+Jiffy's agent marks the corresponding item done in the same Pull Request.
+`AGENTS.md` contains the full instructions Jiffy's agent follows, including how
+newly discovered work gets appended to `ROADMAP.md`'s `## Proposed` section for
+human review.
 
-| Route                     | Description                                            |
-| ------------------------- | ------------------------------------------------------ |
-| `app/(home)`              | The route group for your landing page and other pages. |
-| `app/docs`                | The documentation layout and pages.                    |
-| `app/api/search/route.ts` | The Route Handler for search.                          |
+---
 
-### Fumadocs MDX
-
-Collections are defined with the [Macro API](https://fumadocs.dev/docs/mdx/macro) in `lib/source.ts`.
-
-Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
-
-## Learn More
-
-To learn more about Next.js and Fumadocs, take a look at the following
-resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js
-  features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [Fumadocs](https://fumadocs.dev) - learn about Fumadocs
+Built with [Fumadocs](https://fumadocs.dev).
