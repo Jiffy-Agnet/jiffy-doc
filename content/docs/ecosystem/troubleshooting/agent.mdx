@@ -14,6 +14,8 @@ Because the Agent runs inside a container that is destroyed when the task ends, 
 | Pull Request exists, no comment on the Issue | The completion callback failed and the Gateway's fallback retries also failed | Gateway worker logs; the task's `callback_url` |
 | Branch pushed, no Pull Request | Pull Request creation failed | Provider token permissions; whether a Pull Request already exists for the branch |
 | No branch and no Pull Request | The Agent failed during implementation | Gateway worker logs; the failure comment on the Issue |
+| The run died during a dependency install, exit code 137 | The sandbox hit its memory ceiling — not an Agent mistake | [Sandbox troubleshooting](/docs/ecosystem/troubleshooting/sandbox) |
+| The run was cut off part-way with nothing finished | It exceeded `SANDBOX_AGENT_TIMEOUT` | The container's log, to see whether it was working or looping |
 | Nothing at all happened | The task was never queued | This is upstream of the Agent — see [Edge Component](/docs/ecosystem/troubleshooting/edge-component) |
 
 ## Callback delivery failures

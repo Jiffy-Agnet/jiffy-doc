@@ -18,7 +18,29 @@ git clone https://github.com/Jiffy-Agnet/gateway.git
 cd gateway
 ```
 
-## Step 2 — Configure .env by hand
+## Step 2 — Set up host swap
+
+The installer does this for you; by hand, it's yours to do. Sandbox containers are allowed to spill past their memory ceiling into swap instead of being killed, and a host with no swap loses that safety net — dependency installations then die with exit code 137 and no useful error.
+
+Check what the host has:
+
+```bash
+free -h
+```
+
+If swap is well below twice the host's memory, create a swap file — 4 GB shown here, sized to your host:
+
+```bash
+sudo fallocate -l 4G /var/jiffy-swapfile
+sudo chmod 600 /var/jiffy-swapfile
+sudo mkswap /var/jiffy-swapfile
+sudo swapon /var/jiffy-swapfile
+echo '/var/jiffy-swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+The last line is what makes it survive a reboot. See [Resource Management & Sizing](/docs/ecosystem/resource-management) for how much is enough and why.
+
+## Step 3 — Configure .env by hand
 
 ```bash
 cp .env.example .env
@@ -49,13 +71,28 @@ There's nothing to set for model access — OpenCode ships with free-tier models
 `.env` contains secrets and is excluded from version control. Never commit it, and never push real values to a repository.
 </Callout>
 
-## Step 3 — Start the stack
+Everything else in `.env` has a working default. The ones worth reviewing before a real deployment are the resource budgets, since they're what decides whether a task on this host completes or gets killed:
+
+| Variable | Default | Worth changing when |
+|---|---|---|
+| `JIFFY_GATEWAY_IMAGE_VERSION` | `dev` | You want to pin the Gateway to a released version tag instead of tracking development |
+| `CELERY_WORKER_CONCURRENCY` | `1` | The host has memory for more than one sandbox at a time |
+| `SANDBOX_MEMORY_LIMIT` | `2g` | Repositories have heavy dependency installations |
+| `SANDBOX_MEMORY_SWAP_LIMIT` | `4g` | You want more swap headroom before a task is killed — must stay at or above the memory limit |
+| `SANDBOX_CPU_LIMIT` | `1.5` | You want to give (or deny) a task more processor share |
+| `SANDBOX_AGENT_TIMEOUT` | `3600` | Tasks legitimately need longer than an hour |
+
+Full explanations, and how these multiply against each other, are in [Resource Management & Sizing](/docs/ecosystem/resource-management).
+
+## Step 4 — Start the stack
 
 Bring the services up with Docker Compose directly:
 
 ```bash
 docker compose -f compose.prod.yml up -d
 ```
+
+The Gateway's `web` and `celery` services run a published image (`ghcr.io/jiffy-agnet/gateway`, at the tag `JIFFY_GATEWAY_IMAGE_VERSION` selects) rather than one built on your host, so this pulls rather than builds.
 
 This starts four containers on an internal Docker network:
 
@@ -74,7 +111,7 @@ docker compose -f compose.prod.yml up -d --no-deps web
 Database migrations run automatically — the `web` container's entrypoint runs `manage.py migrate --noinput` before starting the app. There is no separate manual migrate step.
 </Callout>
 
-## Step 4 — Verify the three provider ingestion endpoints
+## Step 5 — Verify the three provider ingestion endpoints
 
 Each provider has its own ingestion route on the Gateway. Before wiring up a real Edge Component, confirm each endpoint is reachable and rejects requests without a valid token — a `401`/`403` here (not a connection error) is what you want to see:
 
@@ -133,6 +170,8 @@ The steps above get Jiffy running. Before pointing it at real traffic, also chec
 - The Gateway sits behind a reverse proxy (nginx, Caddy, Traefik, …) terminating TLS — nothing in this stack does TLS itself
 - The Docker Socket Proxy is never exposed on a host port (it isn't, by default) — only reachable from `web`/`celery` on the internal network
 - Put a calendar reminder to rotate every long-lived PAT/token before it expires — see [`SECRETS.md`](https://github.com/Jiffy-Agnet/gateway/blob/master/SECRETS.md) for the full rotation procedure
+- Host swap is configured and persisted in `/etc/fstab`, and `CELERY_WORKER_CONCURRENCY × SANDBOX_MEMORY_LIMIT` fits in the host's memory — see [Resource Management & Sizing](/docs/ecosystem/resource-management)
+- `JIFFY_GATEWAY_IMAGE_VERSION` is pinned to a released version tag rather than left on `dev`, so a deployment doesn't move underneath you
 - SQLite is the default; a config-only move to PostgreSQL is on the roadmap for teams that want it
 
 ## Next steps

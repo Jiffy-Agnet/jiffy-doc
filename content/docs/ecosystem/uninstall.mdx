@@ -10,7 +10,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 Removing Jiffy means stopping and deleting the Gateway's containers and volumes, then revoking every token you handed out while setting it up — the Gateway itself doesn't hold anything that needs cleaning up beyond that.
 
 <Callout type="warn">
-Removing volumes deletes the Gateway's SQLite database, including task history. If you need to keep a record of past tasks, back up the `db` volume (or your `SANDBOX_OPENCODE_CONFIG_PATH`/data mounts, if customized) before continuing.
+Removing volumes deletes the Gateway's SQLite database, including task history. If you need to keep a record of past tasks, back up the `db` volume (or your data mounts, if customized) before continuing.
 </Callout>
 
 ## Step 1 — Stop and remove the containers and volumes
@@ -87,3 +87,22 @@ rm -rf ~/jiffy-gateway
 If you set Jiffy up by hand instead of with the one-line installer, remove whichever directory you cloned the repository into instead (`gateway`, unless you renamed it).
 
 This also removes the local `.env` file and anything the installer generated alongside it.
+
+## Step 5 — Remove the swap file (optional)
+
+The one-line installer may have created a swap file on the host so sandbox containers had somewhere to spill instead of being killed. It lives outside the install directory, so deleting that directory leaves it behind.
+
+Check whether one exists, and remove it if you don't want to keep the swap:
+
+```bash
+swapon --show
+sudo swapoff /var/jiffy-swapfile
+sudo rm /var/jiffy-swapfile
+sudo sed -i '\#^/var/jiffy-swapfile #d' /etc/fstab
+```
+
+The path is `/var/jiffy-swapfile` unless you set `JIFFY_SWAP_FILE` to something else when installing.
+
+<Callout type="warn">
+Only remove swap you're sure Jiffy created. Other services on the host may be relying on it, and taking swap away from a machine that's using it can push it into out-of-memory kills. `swapon --show` lists every swap area in use, with its size and how much is currently occupied.
+</Callout>

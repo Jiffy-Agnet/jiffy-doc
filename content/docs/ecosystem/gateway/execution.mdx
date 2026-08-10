@@ -15,7 +15,7 @@ The worker picks up the task and does five things in order.
 
 **It makes sure the sandbox image exists.** The configured `SANDBOX_IMAGE` is looked up locally. If it is already present this is nearly free. If it is missing, the Gateway builds it from the sandbox Dockerfile that ships with the repository and tags it. Both paths are logged with the elapsed time, so you can tell a slow first run from a slow every run.
 
-**It starts the container.** The status moves to `provisioning` and the container comes up with its memory limit, its pinned processor, and the repository access token in its environment. When network restriction is active — which is the default — the container is attached to a dedicated bridge network, granted the network administration capability, and has its egress rules applied before anything else runs.
+**It starts the container.** The status moves to `provisioning` and the container comes up with its memory limit, its combined memory + swap ceiling, its CPU share, and the repository access token in its environment. The package-manager caps — the Node.js heap ceiling and the install parallelism — go into the same environment, so they apply to every command the Agent later runs. When network restriction is active — which is the default — the container is attached to a dedicated bridge network, granted the network administration capability, and has its egress rules applied before anything else runs.
 
 <Callout type="warn">
 Provisioning fails closed. If the egress rules cannot be applied, the container is torn down and the task fails. A sandbox is never quietly allowed to run with unrestricted network access because the restriction step did not work.
@@ -23,9 +23,15 @@ Provisioning fails closed. If the egress rules cannot be applied, the container 
 
 **It clones the repository.** The status moves to `cloning`. The access token is injected into the clone address in the format that provider expects, the repository lands in the container's workspace, and the working tree is explicitly moved onto `develop` — the Agent always starts from a known branch rather than whatever the remote happens to point its default at.
 
-**It hands off to the Agent.** The status moves to `running`, the instructions are written into the container, and the Agent is started. From here the Gateway is simply waiting. When the Agent finishes it leaves a structured result file behind in the workspace, which the Gateway reads to learn whether the run succeeded, which branch was pushed, whether a Pull Request was opened, and — importantly — whether the Agent managed to deliver its own callback.
+**It hands off to the Agent.** The status moves to `running`, the instructions are written into the container, and the Agent is started — detached, so nothing has to hold a connection open for the length of the run. From here the Gateway is simply waiting: it polls the container runtime every few seconds to ask whether the Agent has finished, and logs a progress line every five minutes. When the Agent finishes it leaves a structured result file behind in the workspace, which the Gateway reads to learn whether the run succeeded, which branch was pushed, whether a Pull Request was opened, and — importantly — whether the Agent managed to deliver its own callback.
+
+The waiting is bounded by `SANDBOX_AGENT_TIMEOUT`, one hour by default. Because the Gateway enforces that budget itself rather than inheriting it from a request timeout, a slow run cannot be cut short by the Docker client or by the socket proxy sitting between them.
 
 Whatever the outcome, the container is stopped and removed on the way out, unless cleanup has been deliberately turned off for debugging.
+
+<Callout type="info">
+Each concurrency slot on the worker can hold one of these containers for the whole hour. `CELERY_WORKER_CONCURRENCY` therefore multiplies the host's memory footprint, and defaults to one for exactly that reason — see [Resource Management & Sizing](/docs/ecosystem/resource-management).
+</Callout>
 
 ## The callback, and the fallback
 

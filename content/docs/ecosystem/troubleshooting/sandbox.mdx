@@ -20,8 +20,9 @@ Two places tell you which:
 | The first task on a new host takes several extra minutes | The image is being built. This is expected, once |
 | The container starts, then the clone fails | The git host is not on the allowlist, or the access token is wrong |
 | A dependency installation fails to reach its registry | That registry is not on the allowlist |
-| An installation or build dies abruptly with no clear error | The memory limit was exceeded |
-| The container fails to start at all with a processor error | `SANDBOX_CPU_LIMIT` names a processor the host does not have |
+| An installation or build dies with **exit code 137** | The memory limit was exceeded and the process was killed |
+| The container fails to start with a CPU-related error | `SANDBOX_CPU_LIMIT` is set to an old-style processor set such as `0-3` |
+| The task fails with a message about the Agent not finishing in time | The run exceeded `SANDBOX_AGENT_TIMEOUT` |
 
 ## Image and build problems
 
@@ -80,27 +81,75 @@ Both cases are settled by the effective allowlist, which is logged at the start 
 
 ## Resource limit problems
 
-### Memory
+### Exit code 137 — the memory limit
 
-The default ceiling is one gigabyte. Exceeding it does not produce a tidy error — the process using the memory is killed, and what you see is an installation or a build dying abruptly, sometimes with nothing more than a non-zero exit code. Large front-end dependency installations and compiling native dependencies are the usual triggers.
+This is the single most common sandbox failure, and it has a distinctive signature: a process dies with **exit code 137** and no error message explaining anything. That code means the process was killed for exceeding the container's memory ceiling. It is not a bug in the change the Agent was making, and re-running without changing anything usually reproduces it at a slightly different point.
 
-Raise it:
+Large front-end dependency installations and compiling native dependencies are the usual triggers. Work through the options in this order — the later ones are cheaper for the host than simply raising the ceiling:
+
+**1. Give it more swap headroom.** The container is allowed to spill past its memory ceiling into swap, and how far is the difference between the two memory variables. Widening the gap costs no memory at all — only disk and some speed while it is being used.
 
 ```bash
-SANDBOX_MEM_LIMIT=4g
+SANDBOX_MEMORY_LIMIT=2g
+SANDBOX_MEMORY_SWAP_LIMIT=6g
+```
+
+<Callout type="warn">
+`SANDBOX_MEMORY_SWAP_LIMIT` is the **combined** memory + swap ceiling, so it must be at least `SANDBOX_MEMORY_LIMIT`. Setting it lower is a common mistake: the Gateway logs a warning and quietly uses twice the memory limit instead, which is not what you asked for and is easy to miss.
+</Callout>
+
+Swap headroom only works if the host actually has swap. The installer sets this up for you; on a host configured by hand, check it — see [Resource Management & Sizing](/docs/ecosystem/resource-management).
+
+**2. Lower the install parallelism.** Fewer jobs running at once means a lower peak, at the cost of a slower install.
+
+```bash
+SANDBOX_PACKAGE_CONCURRENCY=1
+```
+
+**3. Lower the Node.js heap ceiling.** By default it is half the container's memory limit, which is right for most repositories. A project whose build genuinely needs a large heap is better served by raising the memory limit than by raising this on its own.
+
+```bash
+SANDBOX_NODE_MAX_OLD_SPACE_MB=768
+```
+
+**4. Raise the memory ceiling itself.** The most direct fix, and the most expensive: it multiplies by worker concurrency, so on a host running two tasks at once, a 4 GB ceiling is 8 GB of commitment.
+
+```bash
+SANDBOX_MEMORY_LIMIT=4g
+SANDBOX_MEMORY_SWAP_LIMIT=8g
 ```
 
 <Callout type="info">
-An installation that fails at a different point on each run, with no consistent error, is very often the memory limit rather than a flaky dependency. Raising the ceiling once is a much cheaper test than chasing the dependency.
+An installation that fails at a different point on each run, with no consistent error, is very often the memory limit rather than a flaky dependency. Confirming it is cheap: exit code 137 in the container's log settles the question immediately.
 </Callout>
 
-### Processors
+### CPU
 
-`SANDBOX_CPU_LIMIT` is a processor *set*, not a count. `SANDBOX_CPU_LIMIT=4` means processor number four, and on a host without one the container fails to start at all. To give a sandbox four processors, name them: `0-3`.
+`SANDBOX_CPU_LIMIT` is a CPU *share*, expressed in cores. `1.5` means one and a half cores' worth of time, `0.5` means half a core, `4` means four cores' worth.
+
+<Callout type="warn">
+It used to be a processor *set*, where `0-3` selected four specific cores and `4` meant "processor number four". If you carried a value like `0-3` over from an older `.env`, it is no longer valid — the Gateway logs a warning and falls back to `1.5`. Write the number of cores you want instead.
+</Callout>
+
+A container that gets too small a share does not fail; it just runs slowly, which shows up as tasks approaching the run window rather than as an error.
+
+### The run window
+
+A task that fails with the Agent not having finished in time hit `SANDBOX_AGENT_TIMEOUT` — one hour by default. The Gateway enforces this itself, so the message is explicit rather than appearing as a connection failure.
+
+Before raising it, check whether the run was actually *working* for that hour. A repository whose test suite genuinely takes that long needs a bigger budget; an Agent stuck in a loop does not, and will simply consume whatever you give it.
+
+```bash
+SANDBOX_AGENT_TIMEOUT=7200
+```
+
+The container's log shows the run live, which is the fastest way to tell those two cases apart.
 
 ### Slow installations
 
-Slowness is not always a limit problem. The image already raises the package manager's fetch timeout well above its default and lowers concurrency, precisely because downloads across a restricted egress path were exceeding the default and aborting installations that were otherwise fine. If installations are still slow rather than failing, the egress path is the thing to look at before the resource limits.
+Slowness is not always a limit problem. The image already raises the package manager's fetch timeout well above its default, precisely because downloads across a restricted egress path were exceeding the default and aborting installations that were otherwise fine. The Gateway lowers install parallelism on top of that, which trades speed for a lower memory peak by design.
+
+So if installations are slow rather than failing, look at the egress path first, then at `SANDBOX_PACKAGE_CONCURRENCY` — raising it speeds installs up on a host with memory to spare.
 
 ## When you need to look inside
 

@@ -13,7 +13,11 @@ The Agent runs as a non-root user in its own filesystem, process, and network na
 
 ## Resource limits
 
-Each container is started with a memory ceiling and a pinned processor set. This is not primarily about security — it is about one task being unable to starve the host or its neighbors. A runaway build in one sandbox does not take down the Gateway or slow every other task on the machine.
+Each container is started with a memory ceiling, a combined memory + swap ceiling, and a CPU share. This is not primarily about security — it is about one task being unable to starve the host or its neighbors. A runaway build in one sandbox does not take down the Gateway or slow every other task on the machine.
+
+The swap ceiling is what keeps this from being brittle. Memory alone is a hard wall, and hitting it kills whatever process was unlucky enough to ask for the next allocation. Allowing the container to spill past its memory ceiling into swap means a heavy dependency installation gets *slower* under pressure rather than dying, which is almost always the outcome you want.
+
+The same reasoning extends inside the container: the Node.js heap ceiling and the package managers' parallelism are capped in the container's environment before the Agent runs anything, so an install cannot try to use more memory than the container is allowed to have.
 
 The specific limits are environment variables you can raise or narrow — see [Resource Limits & Network](/docs/ecosystem/sandbox/configuration).
 
