@@ -27,3 +27,5 @@ When an Issue includes a line `Roadmap item: R#`, the agent completing that task
 ## Proposed
 
 <!-- Jiffy's agent appends newly discovered roadmap candidates here as plain list items, unchecked, with no ID. A human reviews and promotes them into the sections above (assigning an ID) before any Issue is created for them. -->
+
+- [ ] Reconcile the install.sh branch referenced in the docs: the Installation page points at `refs/heads/master` while the Gateway README points at `develop`, and the two branches currently carry different installer behaviour (host swap setup exists only on `develop`).

@@ -64,9 +64,19 @@ There is a third, rarer cause: the clone succeeds and then the fetch or checkout
 
 This is usually not a problem. `running` is where nearly all of a task's wall clock time is spent — the Agent is installing runtimes, reading the repository, making changes, and running tests.
 
-The upper bound is set by the Docker client's request timeout, which is raised to one hour for the Agent run. Past that, Docker aborts the call and the task fails.
+The upper bound is `SANDBOX_AGENT_TIMEOUT`, one hour by default. The Gateway enforces it itself: it starts the Agent detached and polls for completion, logging a progress line every five minutes, so a long run leaves a visible trail in the worker log rather than silence. Past the budget, the task fails with an explicit message and the container is torn down.
 
 If you need to see what is actually happening, the Agent's output is redirected to the container's main output stream, so the container's logs show it live. And if you expect to be debugging repeatedly, setting `JIFFY_SANDBOX_CLEANUP` to `false` leaves the container in place afterwards so you can attach and look around properly.
+
+<Callout type="info">
+If you are on an older Gateway and see a task fail after roughly ten minutes with the Agent reported as having exited with *no exit code*, that is a fixed bug rather than something to diagnose. The Agent used to be run as a single blocking call, and the Docker Socket Proxy closes any connection after ten minutes — so the Gateway saw a disconnect, reported a failure with nothing to report, and tore down a container in which the Agent was still working. Updating resolves it.
+</Callout>
+
+## A task failed with exit code 137
+
+The Agent's run was killed for exceeding the sandbox's memory ceiling, almost always during a dependency installation. This is a sandbox resource problem rather than a Gateway one — see [Sandbox troubleshooting](/docs/ecosystem/troubleshooting/sandbox) for the order to work through, and [Resource Management & Sizing](/docs/ecosystem/resource-management) for sizing the host so it stops recurring.
+
+If several tasks are running at once on a modest host, start there: each concurrency slot holds a full sandbox, so `CELERY_WORKER_CONCURRENCY` multiplies the memory commitment. Setting it back to `1` serialises execution and is frequently the whole fix.
 
 ## The task is `done` but no comment appeared
 

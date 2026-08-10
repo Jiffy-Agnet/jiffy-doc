@@ -4,6 +4,7 @@ description: What happens, in order, from the moment the Gateway starts a sandbo
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 The sandbox has two jobs, and they pull in opposite directions. It has to be permissive enough that the Agent can genuinely build and test a real project, and restrictive enough that letting a model-driven agent run arbitrary commands is a reasonable thing to do. Everything about how the sandbox is built comes from balancing those two — see [Isolation Mechanisms](/docs/ecosystem/sandbox/isolation) for how the restrictive half is actually enforced.
 
@@ -13,7 +14,9 @@ The sandbox has two jobs, and they pull in opposite directions. It has to be per
 <Step>
 ### It starts
 
-The Gateway starts a container from the configured image with the repository access token in its environment, a memory ceiling, and a pinned processor set. When restriction is active — the default — the container is also attached to a dedicated bridge network and granted the capability it needs to install its own firewall rules.
+The Gateway starts a container from the configured image with the repository access token in its environment, a memory ceiling, a combined memory + swap ceiling, and a CPU share. When restriction is active — the default — the container is also attached to a dedicated bridge network and granted the capability it needs to install its own firewall rules.
+
+The same step puts the package-manager caps into the container's environment — the Node.js heap ceiling, and the parallelism limits for npm, Cargo, `make`, and Go. They are set at creation time on purpose, so they are already in effect for the very first command the Agent runs rather than being applied after an installation has begun.
 
 On start the container prints a report of what it has: the versions of every runtime and tool, which user it is running as, whether the network is restricted, and the effective allowlist. That report is the single most useful thing to read when a task behaves unexpectedly.
 </Step>
@@ -30,6 +33,8 @@ If those rules cannot be installed, the container is destroyed and the task fail
 ### The Agent's configuration is written in
 
 The OpenCode configuration is written directly into the container rather than mounted from the host. That sounds like a detail, but it is what allows the Gateway's worker to itself run inside a container: a mount would need a path the Docker engine can see on the host, and the configuration only exists inside the worker.
+
+pnpm's install concurrency is written in at the same point, into pnpm's own configuration file. It needs its own step because pnpm ignores the `npm_config_*` environment variables the previous step set. This one is best-effort: if it does not take, installs run at the image's default parallelism and the task continues regardless.
 </Step>
 
 <Step>
@@ -43,7 +48,11 @@ Your repository is cloned into `/workspace` using the access token that arrived 
 
 The Agent is started as a login shell inside `/workspace`, which is how it picks up the version managers on its path. Its output is redirected to the container's main output stream, so the container's own logs show the run live rather than only after it finishes.
 
-The Agent's window is bounded by the Docker client's request timeout — the command blocks on a single long request for its whole duration, so that timeout is what really decides how long a task may take. It defaults to one hour and is never less than fifteen minutes.
+It is started **detached**, and the Gateway then polls the container runtime every few seconds to ask whether it has finished, logging a progress line every five minutes. The Agent's window is `SANDBOX_AGENT_TIMEOUT` — one hour by default — and the Gateway enforces it itself. When the budget runs out, the task fails and the teardown in the next step kills the run.
+
+<Callout type="info">
+This used to be a single blocking call, and the run window was whatever request timeout the Docker client happened to carry. That broke in a specific and confusing way: the Docker Socket Proxy in the bundled stack closes any connection after ten minutes, so every longer run ended with the Gateway seeing a clean disconnect, reporting a failure with no exit code, and tearing down a container in which the Agent was still working perfectly well. Polling keeps every request short, so nothing in the path between the Gateway and the container runtime can truncate a long run.
+</Callout>
 </Step>
 
 <Step>

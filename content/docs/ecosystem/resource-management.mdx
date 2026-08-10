@@ -1,0 +1,112 @@
+---
+title: Resource Management & Sizing
+description: How Jiffy budgets a host — sandbox memory, swap and CPU limits, worker concurrency, the package-manager caps inside the container, and the host swap the installer sets up for you.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Jiffy runs untrusted, model-driven work on your host: installing dependencies, compiling native modules, running a project's own test suite. All of that is memory-hungry and none of it is predictable, so every layer has a budget. This page is the whole picture in one place — what each budget is, how they multiply, and how to size a host so tasks stop being killed.
+
+If you are here because something died with **exit code 137**, that is the memory ceiling. Skip to [Diagnosing a kill](#diagnosing-a-kill).
+
+## The four budgets
+
+They stack, from the host inward:
+
+| Layer | Controlled by | Default |
+|---|---|---|
+| How many tasks run at once | `CELERY_WORKER_CONCURRENCY` | `1` |
+| How much memory one task may use | `SANDBOX_MEMORY_LIMIT` / `SANDBOX_MEMORY_SWAP_LIMIT` | `2g` / `4g` |
+| How much processor one task may use | `SANDBOX_CPU_LIMIT` | `1.5` cores |
+| How much a package manager may use inside a task | `SANDBOX_NODE_MAX_OLD_SPACE_MB`, `SANDBOX_PACKAGE_CONCURRENCY` | derived, `2` |
+
+The multiplication that matters is the first two:
+
+```
+host memory needed  ≈  CELERY_WORKER_CONCURRENCY × SANDBOX_MEMORY_LIMIT  +  the Gateway stack
+host swap needed    ≈  CELERY_WORKER_CONCURRENCY × (SWAP_LIMIT − MEMORY_LIMIT)
+```
+
+With the defaults that is one task, 2 GB of memory, and 2 GB of swap headroom on top of the Gateway's own containers. Doubling concurrency doubles both.
+
+<Callout type="warn">
+Worker concurrency is the setting most likely to cause trouble, because raising it looks harmless and is not. Each slot can hold a full sandbox container for the whole of a task's run window — up to an hour by default. Two slots on a 4 GB host means two 2 GB sandboxes plus the Gateway, and the usual outcome is that both tasks are killed rather than one being slow.
+</Callout>
+
+The default of `1` deliberately serialises execution. Raise it only after the host has memory to spare for every slot at once.
+
+## Memory and swap
+
+`SANDBOX_MEMORY_LIMIT` is a hard wall. `SANDBOX_MEMORY_SWAP_LIMIT` is the **combined** memory + swap ceiling, so the difference between the two is how far a container may spill into swap before anything is killed. With the defaults — `2g` and `4g` — a container gets 2 GB of memory and 2 GB of swap headroom.
+
+That headroom is what turns a hard failure into a slow success. A dependency installation that briefly needs more than its ceiling swaps instead of dying, which is nearly always the outcome you want from a task you are not watching.
+
+Two rules follow from the ceiling being combined:
+
+- It must be **at least** the memory limit. Set it lower and the Gateway logs a warning and uses twice the memory limit instead.
+- `-1` means unlimited swap, which is a legitimate setting on a host with plenty of disk and no other tenants.
+
+<Callout type="info">
+`SANDBOX_MEM_LIMIT` is the old name for `SANDBOX_MEMORY_LIMIT`, still read as a fallback so existing `.env` files keep working. Use the new name in anything you write.
+</Callout>
+
+## Host swap
+
+Swap headroom inside the container only does something if the *host* has swap. Small self-hosted servers frequently ship with none at all, which is exactly the case where sandboxes get killed.
+
+The installer handles this. Before starting any services it reads the host's total memory and current swap, and if swap is below the target it creates or extends a dedicated swap file, activates it, and adds it to the filesystem table so it survives a reboot.
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SWAP_RAM_MULTIPLIER` | `2` | The swap target, as a multiple of total memory |
+| `JIFFY_SWAP_FILE` | `/var/jiffy-swapfile` | Path of the swap file the installer manages |
+
+```bash
+JIFFY_SWAP_RAM_MULTIPLIER=1.5 curl -fsSL https://raw.githubusercontent.com/Jiffy-Agnet/gateway/refs/heads/master/install.sh | bash
+```
+
+Three properties are worth knowing:
+
+- **It is idempotent.** Re-running the installer never creates a second swap file or a duplicate table entry. An existing managed file is grown, not duplicated.
+- **It is best-effort.** If there is not enough free disk to reach the target, or the tools it needs are missing, it logs a warning and continues. A swap problem never fails an install.
+- **It only manages its own file.** Swap you configured yourself is counted toward the target and left alone.
+
+Setting this up by hand is a few lines — sizing, `mkswap`, `swapon`, and a filesystem table entry — and the manual installation path does not do it for you.
+
+## Inside the container
+
+Most kills happen during `npm install`, not during the work the task was actually asked to do. So the Gateway caps the package managers before the Agent can run anything:
+
+- **A Node.js heap ceiling**, from `SANDBOX_NODE_MAX_OLD_SPACE_MB`. Left unset it is derived as half the container's memory limit (never below 512 MiB), so it tracks the memory limit automatically. A heap allowed to grow past the container's ceiling is the classic reason an install is killed.
+- **A parallelism cap**, from `SANDBOX_PACKAGE_CONCURRENCY`. It is applied to npm, Cargo, `make`, and Go through their environment variables, and to pnpm through its own configuration file — pnpm ignores the environment variables the others read.
+
+The Agent is told about the cap in its instructions: that the sandbox is limited, that exit code 137 means memory rather than a mistake in its change, and that the correct response is to retry with lower parallelism rather than to raise the limits it was given.
+
+## Sizing a host
+
+| Host | Sensible configuration | What it gives you |
+|---|---|---|
+| 2 vCPU, 4 GB | Defaults, with host swap | One task at a time, 2 GB plus swap headroom for it |
+| 4 vCPU, 8 GB | `CELERY_WORKER_CONCURRENCY=2` | Two tasks at once, still 2 GB each |
+| 8 vCPU, 16 GB | `CELERY_WORKER_CONCURRENCY=2`, `SANDBOX_MEMORY_LIMIT=4g`, `SANDBOX_MEMORY_SWAP_LIMIT=8g` | Two tasks at once with room for heavy front-end installs |
+
+Raise the memory limit before raising concurrency. One task that reliably finishes is worth more than two that are killed halfway.
+
+## Diagnosing a kill
+
+Exit code 137 means the memory ceiling was hit. In order of what to try — cheapest for the host first:
+
+1. **Widen the swap gap.** Raise `SANDBOX_MEMORY_SWAP_LIMIT` while leaving the memory limit alone. Costs disk, not memory.
+2. **Lower `SANDBOX_PACKAGE_CONCURRENCY`** to `1`. Slower installs, lower peak.
+3. **Lower `SANDBOX_NODE_MAX_OLD_SPACE_MB`** if a single Node process is the thing overshooting.
+4. **Lower `CELERY_WORKER_CONCURRENCY`** if more than one task runs at a time.
+5. **Raise `SANDBOX_MEMORY_LIMIT`** — the direct fix, and the one that multiplies by concurrency.
+
+Check the host has swap at all before spending time on the first option.
+
+## Read next
+
+- [Resource Limits & Network](/docs/ecosystem/sandbox/configuration) — every sandbox variable in detail, including the fallback behavior for bad values.
+- [Environment Variables](/docs/ecosystem/gateway/configuration) — the Gateway's full configuration surface.
+- [Sandbox troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — exit code 137, CPU settings, and the run window.
+- [Prerequisites](/docs/ecosystem/prerequisites) — minimum and recommended host resources.
