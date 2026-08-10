@@ -49,13 +49,28 @@ Want to use a specific provider instead of the built-in free models — Anthropi
 | Resource | Minimum | Notes |
 |---|---|---|
 | CPU | 2 vCPU | 1 for the Gateway stack (web, worker, Redis), 1 free for a running sandbox |
-| Memory | 4 GB RAM | The sandbox image itself, plus whatever the task's toolchain (Node, Python, Go) needs at runtime |
-| Disk | 20 GB free | Docker images (Gateway, sandbox, Redis, proxy) plus room for cloned repositories per task |
+| Memory | 4 GB RAM | A sandbox is capped at 2 GB by default; the rest is the Gateway stack and the host |
+| Swap | 2× RAM | Set up for you by the installer. It's what lets a heavy dependency install spill over instead of being killed |
+| Disk | 20 GB free | Docker images (Gateway, sandbox, Redis, proxy), room for cloned repositories per task, and the swap file |
 | Network | Outbound HTTPS | To your git provider, your model provider (if you've configured one), and package registries the agent may need mid-task |
 
 <Callout type="info">
 These are the floor, not a target — add more CPU and memory if you expect several sandboxes running at once. See Recommended resources below for a baseline that holds up better under everyday use.
 </Callout>
+
+<Callout type="warn">
+Swap is not optional on a 4 GB host. Sandbox containers are allowed to spill past their memory ceiling into swap rather than being killed outright, and a host with no swap loses that safety net entirely — the symptom is dependency installations dying with exit code 137. The one-line installer creates a swap file if the host is short; if you install by hand, set swap up yourself. See [Resource Management & Sizing](/docs/ecosystem/resource-management).
+</Callout>
+
+## Sizing for more than one task at a time
+
+Jiffy runs **one task at a time** by default, and each task can hold a full sandbox for the length of its run. Concurrency multiplies the memory you need:
+
+```
+host memory  ≈  CELERY_WORKER_CONCURRENCY × SANDBOX_MEMORY_LIMIT  +  the Gateway stack
+```
+
+So the minimum above supports the default of one concurrent task with a 2 GB sandbox. Two at once wants 8 GB. Both variables and the reasoning behind them are in [Resource Management & Sizing](/docs/ecosystem/resource-management).
 
 ## Recommended resources
 
@@ -64,8 +79,9 @@ For running more than the bare minimum comfortably — several sandboxes at once
 | Resource | Recommended | Notes |
 |---|---|---|
 | CPU | 4 vCPU | Headroom for the Gateway stack alongside two or more sandboxes running at the same time |
-| Memory | 8 GB RAM | Comfortable room for larger toolchains (e.g. Node, Python, and Go all installed at once) inside a running sandbox |
-| Disk | 50 GB free | More room for cloned repositories, dependency caches, and container image layers to accumulate over time |
+| Memory | 8 GB RAM | Two concurrent sandboxes at the default 2 GB ceiling, with room left for larger toolchains inside each |
+| Swap | 2× RAM | Same reasoning as the minimum — the installer maintains it for you |
+| Disk | 50 GB free | More room for cloned repositories, dependency caches, container image layers, and the swap file |
 
 <Callout type="info">
 These aren't hard requirements, just a more comfortable baseline than the bare minimum. Scale further if your team runs many concurrent tasks or works with unusually large repositories.

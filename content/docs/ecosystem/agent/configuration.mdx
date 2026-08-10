@@ -42,6 +42,18 @@ Each tool authenticates with the git provider token configured for that provider
 Use a long-lived provider token, not a short-lived token issued by a continuous integration run. The Agent pushes and opens its Pull Request asynchronously, well after the triggering run on the provider has already finished.
 </Callout>
 
+## The resource limits it's told about
+
+The Agent's instructions include the constraints of the container it's running in, because a model that doesn't know it's capped will otherwise misread a memory kill as a bug in its own change and start rewriting working code to chase it.
+
+Specifically, it's told:
+
+- That the sandbox has a hard memory and CPU cap, and that **exit code 137 means the container ran out of memory** — not that the change was wrong.
+- That `NODE_OPTIONS`, the `npm_config_*` variables, `CARGO_BUILD_JOBS`, `MAKEFLAGS`, and `GOMAXPROCS` are already set in its environment to keep installs inside that cap, and must not be unset or raised.
+- That the correct response to a memory kill is to retry with *lower* parallelism — `npm install --maxsockets=1`, `pnpm install --network-concurrency=1` — rather than to lift the limits.
+
+The values behind those variables come from the Gateway's configuration; see [Resource Management & Sizing](/docs/ecosystem/resource-management).
+
 ## The model backend
 
 The Agent needs a model backend to run against, but there's nothing to configure to get started: OpenCode, the coding agent running inside the sandbox, ships with free-tier model access built in. Without any configuration at all, the sandbox starts and the Agent can begin work.

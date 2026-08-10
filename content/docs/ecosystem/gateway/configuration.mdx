@@ -1,13 +1,13 @@
 ---
 title: Environment Variables
-description: The environment variables that control the Gateway — per-provider ingestion secrets, the sandbox image and its resource limits, cleanup behavior, the network allowlist, and the Docker connection.
+description: The environment variables that control the Gateway — per-provider ingestion secrets, the sandbox image and its resource limits, execution parallelism, cleanup behavior, the network allowlist, and the Docker connection.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 The Gateway is configured entirely through environment variables, read once at startup from the process environment or from a `.env` file next to the project. There is no configuration stored in the database and nothing to configure per repository — a repository becomes a Jiffy repository by installing the Edge Component, not by registering it here.
 
-The variables fall into five groups.
+The variables fall into seven groups.
 
 ## Ingestion secrets
 
@@ -30,15 +30,34 @@ Generate these as long random values, one per provider, and rotate them on both 
 | Variable | Default | What it controls |
 |---|---|---|
 | `SANDBOX_IMAGE` | `jiffy-sandbox:1.2.0` | The image tag every task's container is started from. If the tag is not present locally, the Gateway builds it from the sandbox Dockerfile in the repository and tags it |
-| `SANDBOX_MEM_LIMIT` | `1g` | The memory ceiling applied to each sandbox container |
-| `SANDBOX_CPU_LIMIT` | `1` | Passed through as the container's processor set, so it selects *which* processors the container may use, not how many shares it gets |
-| `SANDBOX_OPENCODE_CONFIG_PATH` | *(unset)* | Location of the OpenCode configuration for the Agent |
+| `SANDBOX_MEMORY_LIMIT` | `2g` | The hard memory ceiling applied to each sandbox container |
+| `SANDBOX_MEMORY_SWAP_LIMIT` | `4g` | The **combined** memory + swap ceiling. Must be at least the memory limit; `-1` means unlimited swap |
+| `SANDBOX_CPU_LIMIT` | `1.5` | The container's CPU quota in (fractional) cores — a share of the host's processors, not a selection of specific ones |
+| `SANDBOX_NODE_MAX_OLD_SPACE_MB` | *(derived)* | The Node.js heap ceiling in MiB. Unset means half the memory limit, never below 512 |
+| `SANDBOX_PACKAGE_CONCURRENCY` | `2` | How many install, download, and build jobs package managers may run in parallel inside the sandbox |
 
 The image is checked twice — once when a worker becomes ready and once again immediately before each task's container is provisioned — so an image removed between those two moments is rebuilt rather than causing a confusing failure.
 
-<Callout type="info">
-Raising `SANDBOX_MEM_LIMIT` is the first thing to try for repositories with heavy dependency installations. A one gigabyte ceiling is comfortable for most work but is genuinely tight for large front-end dependency trees.
+<Callout type="warn">
+Two of these changed meaning recently. `SANDBOX_CPU_LIMIT` used to be a processor *set* (`0-3` selecting four specific cores); it is now a share, so `1.5` is valid and `0-3` is not. And `SANDBOX_MEM_LIMIT` was renamed to `SANDBOX_MEMORY_LIMIT` — the old name is still honored as a fallback, so existing `.env` files keep working, but new configuration should use the new one.
 </Callout>
+
+The full behavior of each — including what happens when a value is unparseable, and how the package-manager caps are injected into the container — is in [Resource Limits & Network](/docs/ecosystem/sandbox/configuration).
+
+## Execution parallelism and the run window
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `CELERY_WORKER_CONCURRENCY` | `1` | How many tasks one worker process runs at the same time |
+| `SANDBOX_AGENT_TIMEOUT` | `3600` | How long, in seconds, a single Agent run may take before the Gateway gives up and fails the task |
+
+Each concurrency slot can hold one full sandbox container, so these two variables together decide how much of the host Jiffy may occupy: **worker concurrency × `SANDBOX_MEMORY_LIMIT`** is the memory to plan for. The default of one deliberately serialises execution, which is the right choice on a constrained host — a second sandbox starting while the first is mid-installation is the classic way to get both killed.
+
+<Callout type="info">
+The worker reads this from settings rather than from a command-line flag, and the bundled Compose files deliberately pass **no** `--concurrency` argument so that the environment variable is what applies. If you run the worker by hand and pass `--concurrency` yourself, your flag wins.
+</Callout>
+
+The run window is enforced by the Gateway itself: it starts the Agent detached and polls for completion, rather than holding one long request open for the whole run. When the budget is exhausted the task fails and the container is torn down.
 
 ## Cleanup behavior
 
@@ -89,7 +108,23 @@ The worker manages sandbox containers through the Docker engine, and how it reac
 
 Running the worker directly on the host, this can be left unset — the Docker library finds the default socket on its own. The Gateway checks this up front: if the variable is unset *and* the default socket is unreachable, it raises an explicit error naming the variable rather than letting the connection fail mysteriously later.
 
-Every Docker client the Gateway creates carries a request timeout of at least **fifteen minutes**, and the client's timeout is raised again for the Agent run itself — up to one hour by default. This matters more than it looks: the command that runs the Agent blocks on one long request for its whole duration, so the client timeout is what actually decides how long a task is allowed to take before Docker cuts it off.
+Every Docker client the Gateway creates carries a request timeout of at least **fifteen minutes**. That covers the slowest single call the Gateway makes, which is building the sandbox image — it no longer has anything to do with how long a task may run. The Agent is started detached and polled for completion, so its window is governed by `SANDBOX_AGENT_TIMEOUT` alone and no single request has to survive for the length of the run.
+
+<Callout type="info">
+This is why the change was made. A blocking call held one connection open for the whole run, and the Docker Socket Proxy in the bundled stack closes any connection after ten minutes. Every run longer than that ended in a disconnect that surfaced as a confusing failure, while the Agent itself carried on working inside a container nobody was watching any more.
+</Callout>
+
+## The deployment image
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_GATEWAY_IMAGE_VERSION` | `dev` | Which published Gateway image tag the production Compose file runs |
+
+The production Compose file pulls `ghcr.io/jiffy-agnet/gateway` at this tag rather than building the image locally, so starting the stack no longer waits on a build. `dev` tracks the development branch; pin it to a released version tag for a deployment you want to stay put.
+
+<Callout type="info">
+This applies to the `web` and `celery` services — the Gateway itself. It is unrelated to `SANDBOX_IMAGE`, which is the image tasks run *inside* and is still built on the host when it is missing.
+</Callout>
 
 ## Supporting services
 

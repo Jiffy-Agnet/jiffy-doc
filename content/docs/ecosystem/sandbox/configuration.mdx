@@ -1,6 +1,6 @@
 ---
 title: Resource Limits & Network
-description: The environment variables that control the sandbox — the image tag, memory and processor limits, cleanup behavior, and the network allowlist.
+description: The environment variables that control the sandbox — the image tag, memory, swap and CPU limits, package-manager pressure, the run window, cleanup behavior, and the network allowlist.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -25,16 +25,67 @@ Change `SANDBOX_IMAGE` to a tag that does not exist locally and the Gateway will
 
 | Variable | Default | What it controls |
 |---|---|---|
-| `SANDBOX_MEM_LIMIT` | `1g` | The memory ceiling for each sandbox container |
-| `SANDBOX_CPU_LIMIT` | `1` | The container's processor set |
+| `SANDBOX_MEMORY_LIMIT` | `2g` | The hard memory ceiling for each sandbox container |
+| `SANDBOX_MEMORY_SWAP_LIMIT` | `4g` | The **combined** memory + swap ceiling. The difference between the two is how far the container may spill into swap instead of being killed |
+| `SANDBOX_CPU_LIMIT` | `1.5` | The container's CPU quota, in (fractional) cores |
 
-`SANDBOX_CPU_LIMIT` is passed through as a processor set, so it names *which* processors the container may use rather than allocating a share. The default confines each sandbox to a single processor. To give a sandbox more, name them as a set — `0-3` for four processors, or `0,2` for two specific ones.
+The defaults assume the host can spare roughly 2 GB of memory and 1.5 cores for each task running at the same time. Size the host as *worker concurrency × memory limit* — see [Resource Management & Sizing](/docs/ecosystem/resource-management).
 
-<Callout type="warn">
-Because it is a set rather than a count, `SANDBOX_CPU_LIMIT=4` does not mean four processors. It means processor number four, which will fail outright on a host that does not have one.
+### Memory and swap go together
+
+The two memory variables are not independent. `SANDBOX_MEMORY_SWAP_LIMIT` is the combined memory + swap ceiling that the container runtime expects alongside the memory limit, so it must be **greater than or equal to** `SANDBOX_MEMORY_LIMIT`. With the defaults, a container gets 2 GB of memory and may spill up to a further 2 GB into the host's swap before anything is killed.
+
+That headroom is the entire point. A heavy dependency installation that briefly exceeds its memory ceiling gets slower rather than getting killed outright.
+
+| Value you set | What happens |
+|---|---|
+| A size greater than or equal to the memory limit | Used as-is |
+| `-1` | Unlimited swap |
+| Smaller than the memory limit, or unparseable | The Gateway logs a warning and uses **twice** the memory limit instead |
+
+The same fallback applies to the memory limit itself: an unparseable value is logged and replaced with the `2g` default, so a typo degrades to the documented behavior rather than to no limit at all.
+
+<Callout type="info">
+`SANDBOX_MEM_LIMIT` — the older name — is still read as a fallback for `SANDBOX_MEMORY_LIMIT`, so an existing `.env` keeps working. Prefer the new name in anything you write from now on.
 </Callout>
 
-The memory ceiling is the limit most likely to need raising. One gigabyte is comfortable for most work and genuinely tight for large front-end dependency installations, which are also the case where exceeding it produces the most confusing symptom — see [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox).
+### CPU is a share, not a processor number
+
+`SANDBOX_CPU_LIMIT` is a quota expressed in cores, the same thing `docker run --cpus` accepts. Fractions work: `1.5` gives a container one and a half cores' worth of time, `0.5` gives it half a core, `4` gives it four cores' worth.
+
+<Callout type="warn">
+This changed. `SANDBOX_CPU_LIMIT` used to be passed through as a processor *set*, where `4` meant "processor number four" and failed outright on a host without one. It is now a share, so a value carried over from an older `.env` means something different than it used to — `0-3` is no longer valid, and `4` no longer pins a core. A value that is not a positive number is logged and replaced with `1.5`.
+</Callout>
+
+## Package-manager memory pressure
+
+Running out of memory during `npm install` — not during the actual work — is the most common way a sandbox dies, and the symptom is unhelpful: a process killed with **exit code 137** and no error explaining why. So the Gateway caps the package managers before the Agent can run anything.
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `SANDBOX_NODE_MAX_OLD_SPACE_MB` | *(derived)* | The Node.js heap ceiling, in MiB. Unset means half the container's memory limit, never below 512 |
+| `SANDBOX_PACKAGE_CONCURRENCY` | `2` | How many install, download, and build jobs package managers may run in parallel |
+
+These are applied in two places when the container is created:
+
+- **Into the container's environment**, so they are in effect for every command the Agent runs: `NODE_OPTIONS=--max-old-space-size=…`, `npm_config_maxsockets`, `npm_config_jobs`, `CARGO_BUILD_JOBS`, `MAKEFLAGS=-j…`, and `GOMAXPROCS`. Progress output, funding messages, and audit checks are switched off in the same pass, since they cost time and add nothing to a non-interactive run.
+- **Into pnpm's own configuration file**, because pnpm reads its network and child concurrency only from there and ignores the `npm_config_*` variables entirely. This step is best-effort: if it fails, installs simply run at the image's default parallelism and the task carries on.
+
+The Agent is told about all of this in its instructions — that the sandbox has a hard cap, that exit code 137 means memory rather than a mistake in its change, and that it should retry with *lower* parallelism instead of raising the limits.
+
+<Callout type="info">
+Leaving `SANDBOX_NODE_MAX_OLD_SPACE_MB` unset is usually right. Derived from the memory limit, the heap ceiling tracks whatever memory you give the container, so raising `SANDBOX_MEMORY_LIMIT` raises it too without a second edit.
+</Callout>
+
+## The Agent's run window
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `SANDBOX_AGENT_TIMEOUT` | `3600` | How long, in seconds, a single Agent run may take before the Gateway gives up and fails the task |
+
+The Gateway enforces this itself. It starts the Agent detached and polls for completion every few seconds, logging progress every five minutes, so the window is a real budget rather than a side effect of whatever request timeout the Docker client or an intermediate socket proxy happens to use — see [Container Lifecycle](/docs/ecosystem/sandbox/lifecycle).
+
+When the budget runs out the task fails and the container is torn down, which kills the run with it. Values below sixty seconds are raised to sixty.
 
 ## Cleanup
 
@@ -87,16 +138,19 @@ Turning `JIFFY_SANDBOX_NETWORK_RESTRICTED` off gives a model-driven agent unrest
 
 ## The Agent's model configuration
 
-| Variable | What it controls |
-|---|---|
-| `SANDBOX_OPENCODE_CONFIG_PATH` | Where the Gateway reads the OpenCode configuration from |
+There is **no environment variable for this**. The Gateway reads the OpenCode configuration file from its own project root and writes it directly into each container at startup rather than mounting it — which is what lets the Gateway's worker run inside a container itself, since a mount would need a path the Docker engine can see on the host.
 
-That configuration is written directly into each container at startup rather than mounted, which is what lets the Gateway's worker run inside a container itself. The image also carries a working default configuration pointed at OpenCode's built-in free-tier models, so the container starts successfully and the Agent has a model to work with even when nothing custom has been provided.
+<Callout type="info">
+`SANDBOX_OPENCODE_CONFIG_PATH` used to appear in `.env.example` and in the Compose files. It was never actually read, and it has been removed. Delete it from your own `.env` if it is still there — setting it has no effect.
+</Callout>
+
+The image also carries a working default configuration pointed at OpenCode's built-in free-tier models, so the container starts successfully and the Agent has a model to work with even when nothing custom has been provided.
 
 Whatever endpoint that configuration points at needs to be reachable from inside the sandbox. If it is not one of the built-in allowlisted hosts, add it to `SANDBOX_NETWORK_ALLOWLIST_EXTRA`.
 
 ## Read next
 
+- [Resource Management & Sizing](/docs/ecosystem/resource-management) — how these limits, host swap, and worker concurrency fit together.
 - [Isolation Mechanisms](/docs/ecosystem/sandbox/isolation) — how these variables map onto the container boundary, resource limits, and egress restriction actually enforced.
 - [Container Lifecycle](/docs/ecosystem/sandbox/lifecycle) — where in the sequence these settings take effect.
 - [Troubleshooting](/docs/ecosystem/troubleshooting/sandbox) — image problems, a blocked registry, and resource limit failures.

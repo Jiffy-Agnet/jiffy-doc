@@ -28,11 +28,33 @@ curl -fsSL https://raw.githubusercontent.com/Jiffy-Agnet/gateway/refs/heads/mast
 This single command does everything:
 
 - Installs `git`, `curl`, Docker, and the Compose plugin if any are missing, using whichever package manager it finds (`apt`, `dnf`, `yum`, `pacman`, or `apk`)
+- Makes sure the host has enough swap, creating a swap file if it doesn't (see below)
 - Fetches the Gateway source into `~/jiffy-gateway` (or pulls the latest if it's already there)
 - Creates a `.env` file and auto-generates every secret it safely can — `SECRET_KEY`, `REDIS_PASSWORD`, and each provider's ingest token
-- Builds and starts the stack with Docker Compose, then runs database migrations
+- Starts the stack with Docker Compose, pulling the published Gateway image, then runs database migrations
 
 Every step checks the current state first, so the same command is also safe to re-run any time you want to update or restart the stack.
+</Step>
+
+<Step>
+### It sets up swap for you
+
+Sandbox containers are allowed to spill past their memory ceiling into swap rather than being killed, which is what keeps a heavy dependency installation from dying with exit code 137 on a small server. That only works if the host actually has swap, and many small self-hosted servers ship with none.
+
+So before starting anything, the installer reads the host's memory and current swap, and if swap is short it creates or extends a dedicated swap file, activates it, and persists it so it survives a reboot.
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `JIFFY_SWAP_RAM_MULTIPLIER` | `2` | The swap target, as a multiple of total memory |
+| `JIFFY_SWAP_FILE` | `/var/jiffy-swapfile` | Path of the swap file the installer manages |
+
+Set either in the environment when you run it:
+
+```bash
+JIFFY_SWAP_RAM_MULTIPLIER=1.5 curl -fsSL https://raw.githubusercontent.com/Jiffy-Agnet/gateway/refs/heads/master/install.sh | bash
+```
+
+The step is idempotent — re-running never creates a second swap file or a duplicate entry — and entirely best-effort: if there isn't enough free disk to reach the target, it warns and carries on rather than failing the install. Swap you set up yourself is counted toward the target and left untouched.
 </Step>
 
 <Step>
@@ -62,6 +84,10 @@ The web container should respond on port `8080` (the default `WEB_PORT`), and th
 The sandbox image is built automatically on your first task, through the Docker Socket Proxy's `BUILD` permission — the first task you run just takes a little longer while that build completes.
 </Callout>
 
+<Callout type="info">
+The Gateway's own containers run a published image rather than one built on your host, so the stack comes up without waiting on a build. `JIFFY_GATEWAY_IMAGE_VERSION` in `.env` selects which tag — `dev` by default. The *sandbox* image is separate and is still built locally on your first task.
+</Callout>
+
 ## Next steps
 
 1. **Connect a repository** — add an Edge Component ([GitHub Action, GitLab relay, or Gitea Action](/docs/ecosystem/edge-component/providers)) to the repo you want Jiffy to work on, using the ingestion secret the installer generated for that provider.
@@ -70,6 +96,7 @@ The sandbox image is built automatically on your first task, through the Docker 
 
 <Cards>
   <Card title="Manual Installation" href="/docs/ecosystem/manual-installation" description="The same setup, step by step, without the script — plus the production checklist" />
+  <Card title="Resource Management & Sizing" href="/docs/ecosystem/resource-management" description="Sandbox limits, worker concurrency, host swap, and how they multiply" />
   <Card title="Providers" href="/docs/ecosystem/edge-component/providers" description="Connect GitHub, GitLab, or Gitea to a repository" />
   <Card title="Uninstall" href="/docs/ecosystem/uninstall" description="Stop the stack and revoke issued tokens" />
 </Cards>

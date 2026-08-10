@@ -15,7 +15,7 @@ It is worth being precise about what that means. Jiffy hands a model-driven agen
  ┌───────────────────┐                    ┌──────────────────────────────────┐
  │      Gateway      │  starts one        │             Sandbox              │
  │  Django + Celery  │  container         │  Debian container, non-root user │
- │                   │ ─────────────────▶ │  memory limit + pinned processor │
+ │                   │ ─────────────────▶ │  memory + swap limits, CPU share │
  │  clones the       │                    │  egress restricted to allowlist  │
  │  repository in    │                    │  ┌────────────────────────────┐  │
  │  hands the Agent  │                    │  │  /workspace                │  │
@@ -65,6 +65,8 @@ Because versions are resolved from your repository rather than from the image, p
 </Callout>
 
 One practical adjustment worth knowing about: the package manager configuration in the image raises the fetch timeout well above its default and lowers concurrency. Downloading large packages across a restricted, sometimes slow egress path was exceeding the default timeout and aborting installations that were otherwise fine.
+
+The Gateway then lowers concurrency again at container-creation time, from `SANDBOX_PACKAGE_CONCURRENCY`, and caps the Node.js heap to fit inside the container's memory limit. The image's defaults are about slow downloads; these are about memory — an install that outgrows the container's ceiling is killed with an exit code and no explanation, which is much harder to recognize than a timeout. See [Resource Limits & Network](/docs/ecosystem/sandbox/configuration).
 
 ## What the sandbox is not
 
